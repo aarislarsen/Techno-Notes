@@ -1,0 +1,35 @@
+## File 7: `.gitignore`
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Application
+uploads/*
+outputs/*
+logs/*
+!uploads/.gitkeep
+!outputs/.gitkeep
+!logs/.gitkeep
+llm_config.json
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Logs
+*.log
