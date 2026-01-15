@@ -310,39 +310,6 @@ logging.basicConfig(
 )
 ```
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-### Development Setup
-```bash
-# Clone repository
-git clone https://github.com/aarislarsen/Techno-Notes.git
-cd Techno-Notes
-
-# Run setup
-./setup.sh
-
-# Activate virtual environment
-source venv/bin/activate
-
-# Make your changes to app.py or other files
-
-# Test your changes
-./run.sh
-```
-
-### Contribution Guidelines
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Test your changes thoroughly
-4. Ensure security best practices are followed
-5. Update documentation if needed
-6. Commit changes (`git commit -m 'Add amazing feature'`)
-7. Push to branch (`git push origin feature/amazing-feature`)
-8. Open a Pull Request
-
 ## 📊 API Endpoints
 
 For developers who want to integrate programmatically:
@@ -363,24 +330,6 @@ For developers who want to integrate programmatically:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- [Ollama](https://ollama.ai/) - Local LLM runtime that makes this possible
-- [Flask](https://flask.palletsprojects.com/) - Lightweight web framework
-- [PyPDF2](https://pypdf2.readthedocs.io/) - PDF processing library
-- [Meta AI](https://ai.meta.com/) - Llama models
-- [Mistral AI](https://mistral.ai/) - Mistral models
-
-## 📞 Support
-
-- 📖 [Documentation](https://github.com/aarislarsen/Techno-Notes/wiki)
-- 💬 [Discussions](https://github.com/aarislarsen/Techno-Notes/discussions)
-- 🐛 [Issue Tracker](https://github.com/aarislarsen/Techno-Notes/issues)
-
-## 🔐 Security
-
-Found a security vulnerability? Please report it via the [GitHub Security Advisory](https://github.com/aarislarsen/Techno-Notes/security/advisories/new) feature instead of opening a public issue.
-
 ## 📊 Project Status
 
 - ✅ Core functionality complete
@@ -388,19 +337,6 @@ Found a security vulnerability? Please report it via the [GitHub Security Adviso
 - ✅ Documentation complete
 - ✅ Ready for production use
 - 🔄 Ongoing maintenance and updates
-
-## 🗺️ Roadmap
-
-Future planned features:
-
-- [ ] Support for more document formats (DOCX, TXT, Markdown)
-- [ ] Batch processing capabilities
-- [ ] API-only mode (headless operation)
-- [ ] Docker container support
-- [ ] Multi-language support for UI
-- [ ] Custom model fine-tuning guide
-- [ ] Cloud deployment guides (AWS, Azure, GCP)
-- [ ] Export to multiple formats (PDF, DOCX, Markdown)
 
 ## 💡 Use Cases
 
@@ -497,52 +433,3 @@ Analysieren Sie dieses PDF-Dokument und erstellen Sie eine umfassende Zusammenfa
 ## ⭐ Star History
 
 If you find this project useful, please consider giving it a star on GitHub!
-
-## 📈 Changelog
-
-### v1.0.0 (2024-01)
-- Initial release
-- Automated setup for Ubuntu/WSL
-- Support for multiple LLM models (Llama, Mistral, Phi)
-- Security hardening with input validation and rate limiting
-- Comprehensive logging system
-- WSL network compatibility
-- Beautiful responsive web interface
-- Drag-and-drop PDF upload
-- Customizable analysis prompts
-- Automatic file cleanup
-- One-click Ollama installation
-
----
-
-## 📝 FAQ
-
-**Q: Does this work on Windows?**  
-A: Yes, via WSL2 (Windows Subsystem for Linux). Native Windows support is not currently available but is on the roadmap.
-
-**Q: Can I use this offline?**  
-A: Yes! After initial setup and model download, the entire system works completely offline.
-
-**Q: How much disk space do I need?**  
-A: At minimum 10GB: ~2GB for Ollama, 4-8GB for models, rest for system and working space.
-
-**Q: Is my data secure?**  
-A: Yes. All processing happens locally on your machine. No data is sent to external servers.
-
-**Q: Can I process multiple PDFs at once?**  
-A: Currently one at a time. Batch processing is planned for a future release.
-
-**Q: Which model should I choose?**  
-A: For most users, `llama2` (7B) offers the best balance. Use `phi` or `llama3.2:1b` for speed, `llama2:13b` for quality.
-
-**Q: Can I use custom/fine-tuned models?**  
-A: Yes! Any model compatible with Ollama can be used. Import it with `ollama pull <model-name>`.
-
-**Q: Does it work on ARM/Apple Silicon?**  
-A: Not officially tested, but Ollama supports ARM. May work on Apple Silicon via Rosetta or native ARM build.
-
----
-
-**Made with ❤️ for the open-source community**
-
-**Privacy-First | Security-Focused | User-Friendly**
