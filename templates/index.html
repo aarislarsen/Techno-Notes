@@ -301,10 +301,10 @@
                     <option value="phi">phi (2.7B) - Small & Fast</option>
                 </select>
                 <button onclick="startAutoSetup()" class="success" id="setup-btn">
-                    🚀 Start Automatic Setup
+                    📥 Download Model & Start Service
                 </button>
                 <p style="margin-top: 15px; color: #666; font-size: 14px;">
-                    ⏱️ Setup may take 5-15 minutes depending on your connection and model size
+                    ⏱️ Model download may take 5-15 minutes depending on your connection and model size
                 </p>
             </div>
             
@@ -451,7 +451,7 @@
                 console.error('Setup failed:', error);
                 showStatus('❌ Setup initiation failed. Please try again.', 'error');
                 setupBtn.disabled = false;
-                setupBtn.textContent = '🚀 Start Automatic Setup';
+                setupBtn.textContent = '📥 Download Model & Start Service';
                 document.getElementById('setup-controls').classList.remove('hidden');
                 document.getElementById('progress-container').classList.add('hidden');
             }
