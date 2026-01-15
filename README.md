@@ -26,8 +26,8 @@
 ### Installation
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/pdf-llm-processor.git
-cd pdf-llm-processor
+git clone https://github.com/aarislarsen/Techno-Notes.git
+cd Techno-Notes
 
 # Run automated setup
 chmod +x setup.sh
@@ -126,17 +126,17 @@ Review this document focusing on:
 
 ## 🏗️ Architecture
 ```
-pdf-llm-processor/
+Techno-Notes/
 ├── app.py                 # Flask application with security hardening
 ├── templates/
-│   └── index.html        # Modern responsive web interface
+│   ├── index.html        # Modern responsive web interface
+│   └── prompt.txt        # Customizable analysis prompt
 ├── uploads/              # Temporary upload storage (auto-cleanup)
 │   └── .gitkeep
 ├── outputs/              # Generated analysis files (auto-cleanup)
 │   └── .gitkeep
 ├── logs/                 # Application logs
 │   └── .gitkeep
-├── prompt.txt            # Customizable analysis prompt
 ├── llm_config.json       # Configuration (auto-generated)
 ├── venv/                 # Isolated Python environment
 ├── requirements.txt      # Python dependencies
@@ -281,8 +281,8 @@ After=network.target
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/pdf-llm-processor
-ExecStart=/home/YOUR_USERNAME/pdf-llm-processor/venv/bin/python3 app.py
+WorkingDirectory=/home/YOUR_USERNAME/Techno-Notes
+ExecStart=/home/YOUR_USERNAME/Techno-Notes/venv/bin/python3 app.py
 Restart=on-failure
 RestartSec=10
 
@@ -317,8 +317,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ### Development Setup
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/pdf-llm-processor.git
-cd pdf-llm-processor
+git clone https://github.com/aarislarsen/Techno-Notes.git
+cd Techno-Notes
 
 # Run setup
 ./setup.sh
@@ -373,13 +373,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- 📖 [Documentation](https://github.com/yourusername/pdf-llm-processor/wiki)
-- 💬 [Discussions](https://github.com/yourusername/pdf-llm-processor/discussions)
-- 🐛 [Issue Tracker](https://github.com/yourusername/pdf-llm-processor/issues)
+- 📖 [Documentation](https://github.com/aarislarsen/Techno-Notes/wiki)
+- 💬 [Discussions](https://github.com/aarislarsen/Techno-Notes/discussions)
+- 🐛 [Issue Tracker](https://github.com/aarislarsen/Techno-Notes/issues)
 
 ## 🔐 Security
 
-Found a security vulnerability? Please email security@yourproject.com instead of opening a public issue.
+Found a security vulnerability? Please report it via the [GitHub Security Advisory](https://github.com/aarislarsen/Techno-Notes/security/advisories/new) feature instead of opening a public issue.
 
 ## 📊 Project Status
 
