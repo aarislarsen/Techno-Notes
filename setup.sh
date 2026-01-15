@@ -74,7 +74,7 @@ print_status "pip and venv installed"
 
 # Install system packages
 print_step "Installing system dependencies..."
-if sudo apt-get install -y curl wget git build-essential; then
+if sudo apt-get install -y curl wget git build-essential zstd; then
     print_status "System dependencies installed"
 else
     print_error "Failed to install system dependencies"
