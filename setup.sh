@@ -1,10 +1,10 @@
 #!/bin/bash
-# setup.sh - Automated setup script for PDF LLM Processor
+# setup.sh - Automated setup script for Techno-Notes
 # Version: 1.0.2
 
 set -e
 
-echo "=== PDF LLM Processor - Automated Setup ==="
+echo "=== Techno-Notes - Automated Setup ==="
 echo ""
 
 RED='\033[0;31m'
