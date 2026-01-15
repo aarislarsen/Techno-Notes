@@ -67,12 +67,10 @@ if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" 
     exit 1
 fi
 
-# Install pip
-if ! command -v pip3 &> /dev/null; then
-    print_info "Installing pip..."
-    sudo apt-get install -y python3-pip
-    print_status "pip installed"
-fi
+# Install pip and venv
+print_step "Ensuring pip and venv are installed..."
+sudo apt-get install -y python3-pip python3-venv
+print_status "pip and venv installed"
 
 # Install system packages
 print_step "Installing system dependencies..."
