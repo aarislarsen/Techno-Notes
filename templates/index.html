@@ -288,6 +288,71 @@
             margin-bottom: 8px;
         }
 
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 12px 15px;
+            font-size: 14px;
+            border: 2px solid #30363d;
+            border-radius: 6px;
+            background: #21262d;
+            color: #c9d1d9;
+            margin: 8px 0;
+        }
+
+        input[type="text"]:focus, input[type="password"]:focus {
+            outline: none;
+            border-color: #f0883e;
+        }
+
+        .api-config-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin: 15px 0;
+        }
+
+        .provider-section {
+            background: #21262d;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #30363d;
+            margin: 10px 0;
+        }
+
+        .provider-section.active {
+            border-color: #f0883e;
+        }
+
+        .inline-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+
+        .small-button {
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 20px;
+            margin: 15px 0;
+        }
+
+        .radio-group label {
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+            font-weight: normal;
+        }
+
+        .radio-group input[type="radio"] {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
         footer {
             text-align: center;
             padding: 20px;
@@ -312,7 +377,7 @@
     <div class="container">
         <header>
             <h1>📄 Techno-Notes</h1>
-            <p>Analyze PDF documents with local AI - Private & Secure</p>
+            <p>Analyze PDF documents with AI - Local Ollama or Cloud APIs</p>
         </header>
         
         <div id="setup-section" class="section">
@@ -346,7 +411,65 @@
         </div>
         
         <div id="main-section" class="section hidden">
-            <h2>📝 Prompt Configuration</h2>
+            <h2>🤖 LLM Provider Configuration</h2>
+            <p style="margin-bottom: 15px; color: #8b949e;">Choose between local Ollama or cloud-based API providers</p>
+
+            <div class="radio-group">
+                <label>
+                    <input type="radio" name="provider" value="ollama" checked onchange="updateProviderSelection()">
+                    Local Ollama (Private)
+                </label>
+                <label>
+                    <input type="radio" name="provider" value="chatgpt" onchange="updateProviderSelection()">
+                    ChatGPT (OpenAI API)
+                </label>
+                <label>
+                    <input type="radio" name="provider" value="perplexity" onchange="updateProviderSelection()">
+                    Perplexity AI
+                </label>
+            </div>
+
+            <div id="ollama-config" class="provider-section active">
+                <h3 style="margin-bottom: 15px; color: #e6edf3;">Local Ollama Configuration</h3>
+                <p style="color: #8b949e; margin-bottom: 10px;">Using local model - All data stays on your machine</p>
+            </div>
+
+            <div id="chatgpt-config" class="provider-section hidden">
+                <h3 style="margin-bottom: 15px; color: #e6edf3;">ChatGPT API Configuration</h3>
+                <label for="chatgpt-api-key">OpenAI API Key:</label>
+                <input type="password" id="chatgpt-api-key" placeholder="sk-...">
+                <label for="chatgpt-model">Model:</label>
+                <select id="chatgpt-model">
+                    <option value="gpt-4o-mini">GPT-4o Mini (Recommended - Fast & Cheap)</option>
+                    <option value="gpt-4o">GPT-4o (Most Capable)</option>
+                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Fastest & Cheapest)</option>
+                </select>
+                <div class="inline-buttons">
+                    <button onclick="saveAPIKey('chatgpt')" class="small-button">💾 Save API Key</button>
+                    <button onclick="testAPIConnection('chatgpt')" class="small-button">🔗 Test Connection</button>
+                </div>
+                <div id="chatgpt-status"></div>
+            </div>
+
+            <div id="perplexity-config" class="provider-section hidden">
+                <h3 style="margin-bottom: 15px; color: #e6edf3;">Perplexity AI Configuration</h3>
+                <label for="perplexity-api-key">Perplexity API Key:</label>
+                <input type="password" id="perplexity-api-key" placeholder="pplx-...">
+                <label for="perplexity-model">Model:</label>
+                <select id="perplexity-model">
+                    <option value="llama-3.1-sonar-small-128k-online">Llama 3.1 Sonar Small 128k (Recommended)</option>
+                    <option value="llama-3.1-sonar-large-128k-online">Llama 3.1 Sonar Large 128k</option>
+                    <option value="llama-3.1-sonar-huge-128k-online">Llama 3.1 Sonar Huge 128k</option>
+                </select>
+                <div class="inline-buttons">
+                    <button onclick="saveAPIKey('perplexity')" class="small-button">💾 Save API Key</button>
+                    <button onclick="testAPIConnection('perplexity')" class="small-button">🔗 Test Connection</button>
+                </div>
+                <div id="perplexity-status"></div>
+            </div>
+
+            <h2 style="margin-top: 40px;">📝 Prompt Configuration</h2>
             <label for="prompt-editor">Customize how the AI analyzes your documents:</label>
             <textarea id="prompt-editor" placeholder="Enter your analysis prompt..."></textarea>
             <button onclick="savePrompt()">💾 Save Prompt</button>
@@ -362,10 +485,11 @@
         </div>
         
         <footer>
-            <p>🔒 All processing happens locally on your machine. Your data never leaves your computer.</p>
+            <p>🔒 Choose your provider: Local Ollama (private) or API (ChatGPT/Perplexity)</p>
             <p style="margin-top: 10px;">
-                Powered by <a href="https://ollama.ai" target="_blank">Ollama</a> | 
-                <a href="https://github.com/yourusername/pdf-llm-processor" target="_blank">GitHub</a>
+                Powered by <a href="https://ollama.ai" target="_blank">Ollama</a>,
+                <a href="https://openai.com" target="_blank">OpenAI</a>, and
+                <a href="https://perplexity.ai" target="_blank">Perplexity</a>
             </p>
         </footer>
     </div>
@@ -396,7 +520,8 @@
                     document.getElementById('main-section').classList.remove('hidden');
                     document.getElementById('dropzone').classList.remove('disabled');
                     loadPrompt();
-                    
+                    loadProviderConfig();
+
                     if (statusCheckInterval) {
                         clearInterval(statusCheckInterval);
                     }
@@ -608,7 +733,7 @@
         function showStatus(msg, type) {
             status.textContent = msg;
             status.className = type;
-            
+
             if (type === 'success') {
                 setTimeout(() => {
                     status.textContent = '';
@@ -617,8 +742,180 @@
             }
         }
 
+        function showProviderStatus(provider, msg, type) {
+            const statusDiv = document.getElementById(`${provider}-status`);
+            statusDiv.textContent = msg;
+            statusDiv.className = type;
+
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusDiv.textContent = '';
+                    statusDiv.className = '';
+                }, 5000);
+            }
+        }
+
+        async function updateProviderSelection() {
+            const provider = document.querySelector('input[name="provider"]:checked').value;
+
+            // Hide all provider configs
+            document.getElementById('ollama-config').classList.add('hidden');
+            document.getElementById('chatgpt-config').classList.add('hidden');
+            document.getElementById('perplexity-config').classList.add('hidden');
+
+            // Show selected provider config
+            document.getElementById(`${provider}-config`).classList.remove('hidden');
+
+            // Update active state
+            document.querySelectorAll('.provider-section').forEach(section => {
+                section.classList.remove('active');
+            });
+            document.getElementById(`${provider}-config`).classList.add('active');
+
+            // Save provider selection and model
+            let apiModel = null;
+            if (provider === 'chatgpt') {
+                apiModel = document.getElementById('chatgpt-model').value;
+            } else if (provider === 'perplexity') {
+                apiModel = document.getElementById('perplexity-model').value;
+            }
+
+            try {
+                await fetch('/set_provider', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: provider,
+                        api_model: apiModel
+                    })
+                });
+            } catch (error) {
+                console.error('Failed to save provider:', error);
+            }
+        }
+
+        async function saveAPIKey(provider) {
+            const apiKeyInput = document.getElementById(`${provider}-api-key`);
+            const modelSelect = document.getElementById(`${provider}-model`);
+            const apiKey = apiKeyInput.value.trim();
+
+            if (!apiKey) {
+                showProviderStatus(provider, '❌ Please enter an API key', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/save_api_key', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: provider,
+                        api_key: apiKey
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Failed to save API key');
+                }
+
+                // Also save the model selection
+                await fetch('/set_provider', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: provider,
+                        api_model: modelSelect.value
+                    })
+                });
+
+                showProviderStatus(provider, '✅ API key saved successfully', 'success');
+            } catch (error) {
+                console.error('Failed to save API key:', error);
+                showProviderStatus(provider, `❌ ${error.message}`, 'error');
+            }
+        }
+
+        async function testAPIConnection(provider) {
+            const modelSelect = document.getElementById(`${provider}-model`);
+            const model = modelSelect.value;
+
+            showProviderStatus(provider, '⏳ Testing connection...', 'info');
+
+            try {
+                const response = await fetch('/test_api_connection', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: provider,
+                        model: model
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Connection test failed');
+                }
+
+                showProviderStatus(provider, `✅ Connection successful! Using ${data.model}`, 'success');
+            } catch (error) {
+                console.error('Connection test failed:', error);
+                showProviderStatus(provider, `❌ ${error.message}`, 'error');
+            }
+        }
+
+        async function loadProviderConfig() {
+            try {
+                // Load current provider
+                const providerResponse = await fetch('/get_provider');
+                if (providerResponse.ok) {
+                    const data = await providerResponse.json();
+                    if (data.success) {
+                        const provider = data.provider || 'ollama';
+                        const apiModel = data.api_model || 'gpt-4o-mini';
+
+                        // Set radio button
+                        const radio = document.querySelector(`input[name="provider"][value="${provider}"]`);
+                        if (radio) {
+                            radio.checked = true;
+                        }
+
+                        // Set model selects
+                        if (provider === 'chatgpt') {
+                            document.getElementById('chatgpt-model').value = apiModel;
+                        } else if (provider === 'perplexity') {
+                            document.getElementById('perplexity-model').value = apiModel;
+                        }
+
+                        // Update UI to show correct provider section
+                        updateProviderSelection();
+                    }
+                }
+
+                // Load API keys
+                for (const provider of ['chatgpt', 'perplexity']) {
+                    const response = await fetch('/get_api_key', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({provider: provider})
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.api_key) {
+                            document.getElementById(`${provider}-api-key`).value = data.api_key;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load provider config:', error);
+            }
+        }
+
         checkSetupStatus();
-        
+
         setInterval(() => {
             if (!statusCheckInterval && !systemReady) {
                 checkSetupStatus();
@@ -627,5 +924,3 @@
     </script>
 </body>
 </html>
-```
-
