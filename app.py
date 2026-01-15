@@ -251,12 +251,13 @@ class LLMManager:
             # Run install script
             self.update_progress('installing', 'Running Ollama installer...', 40)
             logger.info("Running Ollama installer")
-            
+
             result = subprocess.run(
-                ['sh', install_script], 
-                check=True, 
+                ['sh', install_script],
+                check=True,
                 timeout=600,
                 env={'PATH': os.environ.get('PATH', '/usr/local/bin:/usr/bin:/bin')},
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True
             )
