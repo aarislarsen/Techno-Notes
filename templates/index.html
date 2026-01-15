@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>PDF LLM Processor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .section {
+            padding: 30px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .section:last-child {
+            border-bottom: none;
+        }
+        
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        #dropzone {
+            border: 3px dashed #ccc;
+            border-radius: 8px;
+            padding: 60px;
+            text-align: center;
+            background: #f9f9f9;
+            cursor: pointer;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+        }
+        
+        #dropzone:hover:not(.disabled) {
+            border-color: #667eea;
+            background: #f0f0ff;
+        }
+        
+        #dropzone.drag-over {
+            border-color: #667eea;
+            background: #e6e6ff;
+            transform: scale(1.02);
+        }
+        
+        #dropzone.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+            cursor: not-allowed;
+        }
+        
+        #dropzone p {
+            font-size: 1.2em;
+            color: #666;
+        }
+        
+        #prompt-editor {
+            width: 100%;
+            height: 150px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            margin: 10px 0;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            resize: vertical;
+        }
+        
+        #prompt-editor:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            padding: 12px 24px;
+            margin: 5px;
+            cursor: pointer;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        button.success {
+            background: #28a745;
+        }
+        
+        button.success:hover:not(:disabled) {
+            background: #218838;
+        }
+        
+        #status, .status-box {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 500;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border-left: 4px solid #ffc107;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 4px solid #17a2b8;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 35px;
+            background: #e9ecef;
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 15px 0;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        select {
+            padding: 10px 15px;
+            margin: 5px;
+            font-size: 14px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+        }
+        
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        #setup-log {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 15px 0;
+            border: 1px solid #dee2e6;
+        }
+        
+        .setup-message {
+            padding: 3px 0;
+            color: #495057;
+        }
+        
+        .setup-message:nth-child(even) {
+            background: rgba(0, 0, 0, 0.02);
+        }
+        
+        label {
+            font-weight: 600;
+            color: #555;
+            display: block;
+            margin-bottom: 8px;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📄 PDF LLM Processor</h1>
+            <p>Analyze PDF documents with local AI - Private & Secure</p>
+        </header>
+        
+        <div id="setup-section" class="section">
+            <h2>⚙️ System Setup</h2>
+            <div class="status-box info" id="setup-status">Checking system status...</div>
+            
+            <div id="setup-controls" class="hidden">
+                <label>Select LLM Model:</label>
+                <select id="model-select">
+                    <option value="llama2">llama2 (7B) - Recommended</option>
+                    <option value="llama2:13b">llama2:13b (13B) - Better Quality</option>
+                    <option value="llama3.2:1b">llama3.2:1b (1B) - Fastest</option>
+                    <option value="llama3.2:3b">llama3.2:3b (3B) - Fast</option>
+                    <option value="mistral">mistral (7B) - Efficient</option>
+                    <option value="phi">phi (2.7B) - Small & Fast</option>
+                </select>
+                <button onclick="startAutoSetup()" class="success" id="setup-btn">
+                    🚀 Start Automatic Setup
+                </button>
+                <p style="margin-top: 15px; color: #666; font-size: 14px;">
+                    ⏱️ Setup may take 5-15 minutes depending on your connection and model size
+                </p>
+            </div>
+            
+            <div id="progress-container" class="hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill">0%</div>
+                </div>
+                <div id="setup-log"></div>
+            </div>
+        </div>
+        
+        <div id="main-section" class="section hidden">
+            <h2>📝 Prompt Configuration</h2>
+            <label for="prompt-editor">Customize how the AI analyzes your documents:</label>
+            <textarea id="prompt-editor" placeholder="Enter your analysis prompt..."></textarea>
+            <button onclick="savePrompt()">💾 Save Prompt</button>
+            
+            <h2 style="margin-top: 40px;">📤 Upload PDF</h2>
+            <div id="dropzone" class="disabled">
+                <p>📄 Drag and drop PDF here or click to select</p>
+                <p style="font-size: 0.9em; color: #999; margin-top: 10px;">Maximum file size: 50MB</p>
+                <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+            </div>
+            
+            <div id="status"></div>
+        </div>
+        
+        <footer>
+            <p>🔒 All processing happens locally on your machine. Your data never leaves your computer.</p>
+            <p style="margin-top: 10px;">
+                Powered by <a href="https://ollama.ai" target="_blank">Ollama</a> | 
+                <a href="https://github.com/yourusername/pdf-llm-processor" target="_blank">GitHub</a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        let systemReady = false;
+        let statusCheckInterval;
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function checkSetupStatus() {
+            try {
+                const response = await fetch('/setup_status');
+                if (!response.ok) {
+                    throw new Error('Status check failed');
+                }
+                const status = await response.json();
+                
+                updateSetupUI(status);
+                
+                if (status.ready) {
+                    systemReady = true;
+                    document.getElementById('setup-section').classList.add('hidden');
+                    document.getElementById('main-section').classList.remove('hidden');
+                    document.getElementById('dropzone').classList.remove('disabled');
+                    loadPrompt();
+                    
+                    if (statusCheckInterval) {
+                        clearInterval(statusCheckInterval);
+                    }
+                } else {
+                    if (status.progress.stage === 'idle') {
+                        document.getElementById('setup-controls').classList.remove('hidden');
+                        document.getElementById('progress-container').classList.add('hidden');
+                    } else {
+                        document.getElementById('setup-controls').classList.add('hidden');
+                        document.getElementById('progress-container').classList.remove('hidden');
+                        updateProgress(status.progress);
+                    }
+                }
+            } catch (error) {
+                console.error('Status check failed:', error);
+                const statusBox = document.getElementById('setup-status');
+                statusBox.className = 'status-box error';
+                statusBox.textContent = '✗ Failed to check system status. Please refresh the page.';
+            }
+        }
+
+        function updateSetupUI(status) {
+            const statusBox = document.getElementById('setup-status');
+            
+            if (status.ready) {
+                statusBox.className = 'status-box success';
+                statusBox.innerHTML = `✓ System Ready - Model: ${escapeHtml(status.model_name)}`;
+            } else if (status.progress.error) {
+                statusBox.className = 'status-box error';
+                statusBox.innerHTML = `✗ Setup Error: ${escapeHtml(status.progress.error)}`;
+                document.getElementById('setup-controls').classList.remove('hidden');
+                document.getElementById('progress-container').classList.add('hidden');
+            } else if (status.progress.stage !== 'idle') {
+                statusBox.className = 'status-box info';
+                statusBox.innerHTML = `<span class="spinner"></span> ${escapeHtml(status.progress.message)}`;
+            } else {
+                statusBox.className = 'status-box warning';
+                statusBox.innerHTML = '⚠️ Setup Required - Click button below to begin automatic installation';
+            }
+        }
+
+        function updateProgress(progress) {
+            const fill = document.getElementById('progress-fill');
+            const log = document.getElementById('setup-log');
+            
+            const progressPercent = Math.min(100, Math.max(0, progress.progress));
+            fill.style.width = progressPercent + '%';
+            fill.textContent = progressPercent + '%';
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = 'setup-message';
+            const timestamp = new Date().toLocaleTimeString();
+            logEntry.textContent = `[${timestamp}] ${progress.message}`;
+            log.appendChild(logEntry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        async function startAutoSetup() {
+            const modelName = document.getElementById('model-select').value;
+            const setupBtn = document.getElementById('setup-btn');
+            
+            setupBtn.disabled = true;
+            setupBtn.innerHTML = '<span class="spinner"></span> Setting up...';
+            
+            document.getElementById('setup-controls').classList.add('hidden');
+            document.getElementById('progress-container').classList.remove('hidden');
+            
+            try {
+                const response = await fetch('/auto_setup', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({model_name: modelName})
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Setup failed to start');
+                }
+                
+                statusCheckInterval = setInterval(checkSetupStatus, 2000);
+            } catch (error) {
+                console.error('Setup failed:', error);
+                showStatus('❌ Setup initiation failed. Please try again.', 'error');
+                setupBtn.disabled = false;
+                setupBtn.textContent = '🚀 Start Automatic Setup';
+                document.getElementById('setup-controls').classList.remove('hidden');
+                document.getElementById('progress-container').classList.add('hidden');
+            }
+        }
+
+        async function loadPrompt() {
+            try {
+                const response = await fetch('/get_prompt');
+                if (!response.ok) {
+                    throw new Error('Failed to load prompt');
+                }
+                const data = await response.json();
+                document.getElementById('prompt-editor').value = data.prompt;
+            } catch (error) {
+                console.error('Failed to load prompt:', error);
+            }
+        }
+
+        async function savePrompt() {
+            try {
+                const response = await fetch('/save_prompt', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        prompt: document.getElementById('prompt-editor').value
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to save prompt');
+                }
+                
+                showStatus('✅ Prompt saved successfully', 'success');
+            } catch (error) {
+                console.error('Failed to save prompt:', error);
+                showStatus('❌ Failed to save prompt', 'error');
+            }
+        }
+
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const status = document.getElementById('status');
+
+        dropzone.onclick = () => { 
+            if (systemReady) {
+                fileInput.click(); 
+            }
+        };
+        
+        dropzone.ondragover = (e) => {
+            if (!systemReady) return;
+            e.preventDefault();
+            dropzone.classList.add('drag-over');
+        };
+        
+        dropzone.ondragleave = () => {
+            dropzone.classList.remove('drag-over');
+        };
+        
+        dropzone.ondrop = (e) => {
+            if (!systemReady) return;
+            e.preventDefault();
+            dropzone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        };
+        
+        fileInput.onchange = (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        };
+
+        async function handleFile(file) {
+            if (!file) {
+                showStatus('❌ No file selected', 'error');
+                return;
+            }
+            
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                showStatus('❌ Please select a PDF file', 'error');
+                return;
+            }
+            
+            if (file.size > 50 * 1024 * 1024) {
+                showStatus('❌ File too large (max 50MB)', 'error');
+                return;
+            }
+
+            showStatus('⏳ Processing PDF... This may take a few minutes.', 'info');
+            
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/process_pdf', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok || data.error) {
+                    throw new Error(data.error || 'Processing failed');
+                }
+                
+                const a = document.createElement('a');
+                a.href = `/download/${encodeURIComponent(data.output_file)}`;
+                a.download = data.original_name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                showStatus('✅ Processing complete! Download started.', 'success');
+                
+                fileInput.value = '';
+                
+            } catch (error) {
+                console.error('Processing error:', error);
+                showStatus(`❌ Error: ${escapeHtml(error.message)}`, 'error');
+            }
+        }
+
+        function showStatus(msg, type) {
+            status.textContent = msg;
+            status.className = type;
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    status.textContent = '';
+                    status.className = '';
+                }, 5000);
+            }
+        }
+
+        checkSetupStatus();
+        
+        setInterval(() => {
+            if (!statusCheckInterval && !systemReady) {
+                checkSetupStatus();
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
+```
+
+---
+
+## File 3: `prompt.txt`
+```
+Analyze this PDF document and provide a comprehensive summary including:
+
+1. **Main Topics**: Identify the primary subjects discussed
+2. **Key Points**: List the most important findings or arguments
+3. **Conclusions**: Summarize any conclusions reached
+4. **Recommendations**: Note any action items or recommendations
+5. **Notable Data**: Highlight important statistics, figures, or evidence
+
+Provide a clear, well-structured summary that captures the essence of the document.
+```
+
+---
+
+## File 4: `requirements.txt`
+```
+flask==3.0.0
+PyPDF2==3.0.1
+requests==2.31.0
+werkzeug==3.0.1
