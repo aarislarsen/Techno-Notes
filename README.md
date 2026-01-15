@@ -1,18 +1,19 @@
 # Techno-Notes
 
-> 🚀 Automated PDF document analysis using local LLM (Ollama). Zero-configuration setup for Ubuntu/WSL.
+> 🚀 Automated PDF document analysis using local LLM (Ollama) or cloud APIs (ChatGPT, Perplexity). Zero-configuration setup for Ubuntu/WSL.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 
 ## ✨ Features
 
-- 🔒 **Privacy-First**: All processing happens locally - your data never leaves your machine
+- 🔒 **Privacy-First Option**: Use local Ollama - your data never leaves your machine
+- ☁️ **Cloud API Support**: Optional integration with ChatGPT and Perplexity APIs
 - 🚀 **Fully Automated Setup**: One-click installation of all dependencies including Ollama
 - 🎯 **Simple Interface**: Beautiful drag-and-drop web UI with customizable prompts
 - 🛡️ **Security Hardened**: Input validation, rate limiting, sanitization, and secure file handling
 - 📦 **Self-Contained**: Isolated virtual environment with dependency management
-- ⚡ **Multiple Models**: Support for Llama, Mistral, Phi, and more
+- ⚡ **Multiple Providers**: Choose between local Ollama or cloud-based APIs
 
 ## 🚀 Quick Start
 
@@ -66,21 +67,60 @@ System starts immediately with no setup required.
 
 ### Basic Workflow
 
-1. **Configure Analysis Prompt**
+1. **Choose LLM Provider** (Optional)
+   - **Local Ollama** (Default): Privacy-first, runs entirely on your machine
+   - **ChatGPT**: OpenAI's GPT models via API
+   - **Perplexity**: Perplexity AI's models via API
+
+2. **Configure API (if using cloud providers)**
+   - Enter your API key in the provider configuration section
+   - Select your preferred model
+   - Test the connection to ensure it works
+
+3. **Configure Analysis Prompt**
    - Edit the prompt in the web interface to customize how the AI analyzes documents
    - Default prompt provides comprehensive summaries with key points
 
-2. **Upload PDF**
+4. **Upload PDF**
    - Drag and drop PDF file (max 50MB, 100 pages)
    - Or click to browse and select file
 
-3. **Wait for Processing**
+5. **Wait for Processing**
    - Processing time varies by model size and document length
    - Typically 30 seconds to 3 minutes
 
-4. **Download Results**
+6. **Download Results**
    - Analysis automatically downloads as a text file
    - Original filename preserved with "_output.txt" suffix
+
+### Using Cloud API Providers
+
+#### ChatGPT (OpenAI)
+
+1. Get an API key from [OpenAI Platform](https://platform.openai.com/api-keys)
+2. In the web interface, select "ChatGPT (OpenAI API)"
+3. Enter your API key and select a model (gpt-4o-mini recommended for cost-effectiveness)
+4. Click "Save API Key" and then "Test Connection"
+5. Once connected, you can process PDFs using ChatGPT
+
+**Available Models:**
+- `gpt-4o-mini` - Fast and cost-effective (Recommended)
+- `gpt-4o` - Most capable
+- `gpt-4-turbo` - Advanced reasoning
+- `gpt-3.5-turbo` - Fastest and cheapest
+
+#### Perplexity AI
+
+1. Get an API key from [Perplexity AI](https://www.perplexity.ai/settings/api)
+2. In the web interface, select "Perplexity AI"
+3. Enter your API key and select a model
+4. Click "Save API Key" and then "Test Connection"
+5. Once connected, you can process PDFs using Perplexity
+
+**Available Models:**
+- `llama-3.1-sonar-small-128k-online` - Recommended
+- `llama-3.1-sonar-large-128k-online` - Higher quality
+- `llama-3.1-sonar-huge-128k-online` - Maximum capability
 
 ### Custom Prompts
 
@@ -138,7 +178,8 @@ Techno-Notes/
 │   └── .gitkeep
 ├── logs/                 # Application logs
 │   └── .gitkeep
-├── llm_config.json       # Configuration (auto-generated)
+├── llm_config.json       # LLM configuration (auto-generated)
+├── .api_keys.json        # API keys storage (gitignored for security)
 ├── venv/                 # Isolated Python environment
 ├── requirements.txt      # Python dependencies
 ├── setup.sh              # Automated setup script
@@ -158,9 +199,10 @@ Techno-Notes/
 - ✅ Text length limits at multiple checkpoints
 
 ### Data Protection
-- ✅ All processing happens locally (no external API calls)
+- ✅ Local processing option (Ollama - no external API calls)
+- ✅ API keys stored securely with restricted file permissions (0600)
+- ✅ API keys excluded from git via .gitignore
 - ✅ Automatic file cleanup (1-hour retention)
-- ✅ Restrictive file permissions (0600)
 - ✅ Secure session management
 - ✅ XSS prevention with HTML escaping
 
@@ -169,6 +211,7 @@ Techno-Notes/
 - ✅ Flask application configurable binding
 - ✅ Rate limiting (10 requests/minute per IP)
 - ✅ Request timeout enforcement
+- ✅ HTTPS for all API communications (ChatGPT/Perplexity)
 
 ### Application Security
 - ✅ No shell injection vulnerabilities
@@ -176,6 +219,7 @@ Techno-Notes/
 - ✅ Graceful shutdown handling
 - ✅ Process isolation
 - ✅ Input sanitization on all endpoints
+- ✅ Provider validation for API requests
 
 ## 🐛 Troubleshooting
 
@@ -327,8 +371,13 @@ For developers who want to integrate programmatically:
 | `/download/<file>` | GET | Download analysis result |
 | `/get_prompt` | GET | Get current analysis prompt |
 | `/save_prompt` | POST | Save custom analysis prompt |
-| `/list_models` | GET | List available models |
-| `/set_model` | POST | Change active model |
+| `/list_models` | GET | List available Ollama models |
+| `/set_model` | POST | Change active Ollama model |
+| `/get_provider` | GET | Get current LLM provider |
+| `/set_provider` | POST | Set LLM provider (ollama/chatgpt/perplexity) |
+| `/save_api_key` | POST | Save API key for cloud provider |
+| `/get_api_key` | POST | Get saved API key for provider |
+| `/test_api_connection` | POST | Test API connection |
 
 ## 📜 License
 

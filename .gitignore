@@ -19,6 +19,7 @@ logs/*
 !outputs/.gitkeep
 !logs/.gitkeep
 llm_config.json
+.api_keys.json
 
 # OS
 .DS_Store

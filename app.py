@@ -34,6 +34,7 @@ app.config['OUTPUT_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__fil
 app.config['SECRET_KEY'] = secrets.token_hex(32)
 PROMPT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt.txt')
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'llm_config.json')
+API_KEYS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.api_keys.json')
 OLLAMA_URL = 'http://127.0.0.1:11434'
 ALLOWED_EXTENSIONS = {'pdf'}
 
@@ -155,7 +156,9 @@ class LLMManager:
             'ollama_path': None,
             'model_name': 'llama2',
             'model_downloaded': False,
-            'setup_complete': False
+            'setup_complete': False,
+            'provider': 'ollama',  # Default to local ollama
+            'api_model': 'gpt-4o-mini'  # Default API model
         }
     
     def save_config(self):
@@ -584,19 +587,167 @@ def extract_pdf_text(pdf_path):
     logger.info(f"Extracted {len(text)} characters from PDF")
     return sanitize_input(text, 500000)
 
+def load_api_keys():
+    """Load API keys from file"""
+    try:
+        if os.path.exists(API_KEYS_FILE):
+            with open(API_KEYS_FILE, 'r') as f:
+                keys = json.load(f)
+                if isinstance(keys, dict):
+                    return keys
+    except (json.JSONDecodeError, IOError) as e:
+        logger.error(f"API keys load error: {e}")
+    return {}
+
+def save_api_key(provider, api_key):
+    """Save API key for a provider"""
+    try:
+        api_keys = load_api_keys()
+        api_keys[provider] = api_key
+
+        with open(API_KEYS_FILE, 'w') as f:
+            json.dump(api_keys, f, indent=2)
+
+        try:
+            os.chmod(API_KEYS_FILE, 0o600)
+        except OSError:
+            pass
+
+        logger.info(f"API key saved for provider: {provider}")
+        return True
+    except IOError as e:
+        logger.error(f"API key save error: {e}")
+        return False
+
+def get_api_key(provider):
+    """Get API key for a provider"""
+    api_keys = load_api_keys()
+    return api_keys.get(provider)
+
+def query_chatgpt(prompt, context, model='gpt-4o-mini'):
+    """Query ChatGPT API with timeout and validation"""
+    prompt = sanitize_input(prompt, 10000)
+    context = sanitize_input(context, 100000)
+
+    api_key = get_api_key('chatgpt')
+    if not api_key:
+        raise Exception("ChatGPT API key not configured. Please add your API key in settings.")
+
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": f"Document content:\n\n{context}"}
+        ],
+        "temperature": 0.7
+    }
+
+    logger.info(f"Querying ChatGPT with model: {model}")
+
+    try:
+        response = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers=headers,
+            json=payload,
+            timeout=300
+        )
+        response.raise_for_status()
+
+        result = response.json()
+        llm_response = result['choices'][0]['message']['content']
+
+        logger.info(f"Received response from ChatGPT ({len(llm_response)} characters)")
+        return sanitize_input(llm_response, 1000000)
+
+    except requests.Timeout:
+        logger.error("ChatGPT request timeout")
+        raise Exception("ChatGPT request timeout (5 minutes)")
+    except requests.RequestException as e:
+        logger.error(f"ChatGPT request failed: {e}")
+        error_detail = ""
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_detail = e.response.json().get('error', {}).get('message', '')
+            except:
+                pass
+        raise Exception(f"ChatGPT API error: {error_detail or str(e)[:100]}")
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"Invalid ChatGPT response: {e}")
+        raise Exception("Invalid ChatGPT response format")
+
+def query_perplexity(prompt, context, model='llama-3.1-sonar-small-128k-online'):
+    """Query Perplexity API with timeout and validation"""
+    prompt = sanitize_input(prompt, 10000)
+    context = sanitize_input(context, 100000)
+
+    api_key = get_api_key('perplexity')
+    if not api_key:
+        raise Exception("Perplexity API key not configured. Please add your API key in settings.")
+
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": f"Document content:\n\n{context}"}
+        ]
+    }
+
+    logger.info(f"Querying Perplexity with model: {model}")
+
+    try:
+        response = requests.post(
+            'https://api.perplexity.ai/chat/completions',
+            headers=headers,
+            json=payload,
+            timeout=300
+        )
+        response.raise_for_status()
+
+        result = response.json()
+        llm_response = result['choices'][0]['message']['content']
+
+        logger.info(f"Received response from Perplexity ({len(llm_response)} characters)")
+        return sanitize_input(llm_response, 1000000)
+
+    except requests.Timeout:
+        logger.error("Perplexity request timeout")
+        raise Exception("Perplexity request timeout (5 minutes)")
+    except requests.RequestException as e:
+        logger.error(f"Perplexity request failed: {e}")
+        error_detail = ""
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_detail = e.response.text[:200]
+            except:
+                pass
+        raise Exception(f"Perplexity API error: {error_detail or str(e)[:100]}")
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"Invalid Perplexity response: {e}")
+        raise Exception("Invalid Perplexity response format")
+
 def query_ollama(prompt, context):
     """Query Ollama with timeout and validation"""
     prompt = sanitize_input(prompt, 10000)
     context = sanitize_input(context, 100000)
-    
+
     payload = {
         "model": llm_manager.config['model_name'],
         "prompt": f"{prompt}\n\nDocument content:\n{context}",
         "stream": False
     }
-    
+
     logger.info(f"Querying Ollama with model: {llm_manager.config['model_name']}")
-    
+
     try:
         response = requests.post(
             f'{OLLAMA_URL}/api/generate',
@@ -604,13 +755,13 @@ def query_ollama(prompt, context):
             timeout=300
         )
         response.raise_for_status()
-        
+
         result = response.json()
         llm_response = result.get('response', '')
-        
+
         logger.info(f"Received response from Ollama ({len(llm_response)} characters)")
         return sanitize_input(llm_response, 1000000)
-        
+
     except requests.Timeout:
         logger.error("Ollama request timeout")
         raise Exception("LLM request timeout (5 minutes)")
@@ -620,6 +771,20 @@ def query_ollama(prompt, context):
     except json.JSONDecodeError as e:
         logger.error(f"Invalid Ollama response: {e}")
         raise Exception("Invalid LLM response format")
+
+def query_llm(prompt, context):
+    """Route LLM query to appropriate provider"""
+    provider = llm_manager.config.get('provider', 'ollama')
+    api_model = llm_manager.config.get('api_model', 'gpt-4o-mini')
+
+    logger.info(f"Routing query to provider: {provider}")
+
+    if provider == 'chatgpt':
+        return query_chatgpt(prompt, context, api_model)
+    elif provider == 'perplexity':
+        return query_perplexity(prompt, context, api_model)
+    else:  # Default to ollama
+        return query_ollama(prompt, context)
 
 @app.route('/')
 def index():
@@ -714,15 +879,235 @@ def update_prompt():
         data = request.get_json()
         if not data or not isinstance(data, dict) or 'prompt' not in data:
             return jsonify({'error': 'Invalid request'}), 400
-        
+
         if not isinstance(data['prompt'], str):
             return jsonify({'error': 'Invalid prompt type'}), 400
-        
+
         save_prompt(data['prompt'])
         return jsonify({'status': 'success'})
-        
+
     except Exception as e:
         logger.error(f"Save prompt error: {e}")
+        return jsonify({'error': str(e)[:200]}), 500
+
+@app.route('/save_api_key', methods=['POST'])
+@rate_limit
+def save_api_key_endpoint():
+    """Save API key for selected AI provider"""
+    try:
+        data = request.get_json()
+        if not data or not isinstance(data, dict):
+            return jsonify({'error': 'Invalid request'}), 400
+
+        provider = data.get('provider')
+        api_key = data.get('api_key')
+
+        if not provider or not isinstance(provider, str):
+            return jsonify({'error': 'Invalid provider'}), 400
+
+        if not api_key or not isinstance(api_key, str):
+            return jsonify({'error': 'Invalid API key'}), 400
+
+        # Validate provider
+        if provider not in ['chatgpt', 'perplexity']:
+            return jsonify({'error': 'Invalid provider. Must be chatgpt or perplexity'}), 400
+
+        # Sanitize inputs
+        provider = sanitize_input(provider, 50)
+        api_key = api_key.strip()[:500]  # Limit key length but don't sanitize special chars
+
+        if save_api_key(provider, api_key):
+            logger.info(f"API key saved for provider: {provider}")
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'Failed to save API key'}), 500
+
+    except Exception as e:
+        logger.error(f"Save API key error: {e}")
+        return jsonify({'error': str(e)[:200]}), 500
+
+@app.route('/get_api_key', methods=['POST'])
+def get_api_key_endpoint():
+    """Get API key for selected AI provider"""
+    try:
+        data = request.get_json()
+        if not data or not isinstance(data, dict):
+            return jsonify({'error': 'Invalid request'}), 400
+
+        provider = data.get('provider')
+
+        if not provider or not isinstance(provider, str):
+            return jsonify({'error': 'Invalid provider'}), 400
+
+        provider = sanitize_input(provider, 50)
+        api_key = get_api_key(provider)
+
+        return jsonify({
+            'success': True,
+            'api_key': api_key if api_key else None
+        })
+
+    except Exception as e:
+        logger.error(f"Get API key error: {e}")
+        return jsonify({'error': str(e)[:200]}), 500
+
+@app.route('/set_provider', methods=['POST'])
+@rate_limit
+def set_provider_endpoint():
+    """Set the active LLM provider"""
+    try:
+        data = request.get_json()
+        if not data or not isinstance(data, dict):
+            return jsonify({'error': 'Invalid request'}), 400
+
+        provider = data.get('provider')
+        api_model = data.get('api_model')
+
+        if not provider or not isinstance(provider, str):
+            return jsonify({'error': 'Invalid provider'}), 400
+
+        # Validate provider
+        if provider not in ['ollama', 'chatgpt', 'perplexity']:
+            return jsonify({'error': 'Invalid provider'}), 400
+
+        provider = sanitize_input(provider, 50)
+
+        llm_manager.config['provider'] = provider
+
+        if api_model and isinstance(api_model, str):
+            llm_manager.config['api_model'] = sanitize_input(api_model, 100)
+
+        llm_manager.save_config()
+        logger.info(f"Provider changed to: {provider}")
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        logger.error(f"Set provider error: {e}")
+        return jsonify({'error': str(e)[:200]}), 500
+
+@app.route('/get_provider', methods=['GET'])
+def get_provider_endpoint():
+    """Get the current LLM provider and model"""
+    try:
+        return jsonify({
+            'success': True,
+            'provider': llm_manager.config.get('provider', 'ollama'),
+            'api_model': llm_manager.config.get('api_model', 'gpt-4o-mini')
+        })
+    except Exception as e:
+        logger.error(f"Get provider error: {e}")
+        return jsonify({'error': str(e)[:200]}), 500
+
+@app.route('/test_api_connection', methods=['POST'])
+@rate_limit
+def test_api_connection():
+    """Test connection to selected AI provider using API key"""
+    try:
+        data = request.get_json()
+        if not data or not isinstance(data, dict):
+            return jsonify({'error': 'Invalid request'}), 400
+
+        provider = data.get('provider')
+        model = data.get('model', 'gpt-4o-mini')
+
+        if not provider or not isinstance(provider, str):
+            return jsonify({'error': 'Invalid provider'}), 400
+
+        provider = sanitize_input(provider, 50)
+        model = sanitize_input(model, 100)
+
+        api_key = get_api_key(provider)
+
+        if not api_key:
+            return jsonify({
+                'success': False,
+                'error': 'No API key found. Please save your API key first.'
+            })
+
+        # Test connection based on provider
+        if provider == 'chatgpt':
+            headers = {
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            }
+
+            test_payload = {
+                'model': model,
+                'messages': [
+                    {'role': 'user', 'content': 'Hello'}
+                ],
+                'max_tokens': 5
+            }
+
+            response = requests.post(
+                'https://api.openai.com/v1/chat/completions',
+                headers=headers,
+                json=test_payload,
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                return jsonify({
+                    'success': True,
+                    'provider': provider,
+                    'model': model
+                })
+            else:
+                error_detail = response.text[:200]
+                return jsonify({
+                    'success': False,
+                    'error': f'API error: {response.status_code} - {error_detail}'
+                })
+
+        elif provider == 'perplexity':
+            headers = {
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            }
+
+            test_payload = {
+                'model': model,
+                'messages': [
+                    {'role': 'system', 'content': 'Be brief.'},
+                    {'role': 'user', 'content': 'Hi'}
+                ]
+            }
+
+            response = requests.post(
+                'https://api.perplexity.ai/chat/completions',
+                headers=headers,
+                json=test_payload,
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                return jsonify({
+                    'success': True,
+                    'provider': provider,
+                    'model': model
+                })
+            else:
+                error_detail = response.text[:200]
+                return jsonify({
+                    'success': False,
+                    'error': f'API error: {response.status_code} - {error_detail}'
+                })
+
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid provider'
+            })
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Test API connection error: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Connection error: {str(e)[:100]}'
+        })
+    except Exception as e:
+        logger.error(f"Test API connection error: {e}")
         return jsonify({'error': str(e)[:200]}), 500
 
 @app.route('/process_pdf', methods=['POST'])
@@ -758,7 +1143,7 @@ def process_pdf():
         try:
             pdf_text = extract_pdf_text(filepath)
             prompt = read_prompt()
-            llm_response = query_ollama(prompt, pdf_text)
+            llm_response = query_llm(prompt, pdf_text)
             
             output_filename = f"{Path(filename).stem}_output.txt"
             output_path = os.path.join(
