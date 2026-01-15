@@ -38,6 +38,7 @@ The setup script automatically:
 - ✅ Installs Python 3 and system dependencies
 - ✅ Creates isolated virtual environment
 - ✅ Installs Python packages (Flask, PyPDF2, requests)
+- ✅ Installs Ollama LLM runtime
 - ✅ Sets up application structure with proper permissions
 
 ### First Run
@@ -47,12 +48,12 @@ The setup script automatically:
 
 Open your browser to: **http://localhost:5000**
 
-Click **"Start Automatic Setup"** to:
-1. Install Ollama automatically
-2. Download your selected LLM model (choose smaller models like phi or llama3.2:1b for faster setup)
-3. Start the service
+On first launch, you'll need to:
+1. Select your preferred LLM model (choose smaller models like phi or llama3.2:1b for faster setup)
+2. Click to download the model
+3. Wait for download to complete (1-8GB depending on model choice)
 
-⏱️ **Note**: Initial setup downloads 1-8GB of model data depending on model choice.
+⏱️ **Note**: Model download typically takes 2-15 minutes depending on your internet connection and model size.
 
 ### Subsequent Runs
 ```bash
@@ -192,10 +193,13 @@ sudo kill -9 <PID>
 # Check if Ollama is installed
 ollama --version
 
-# Manually start Ollama
+# If not installed, install manually
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Start Ollama service
 ollama serve
 
-# Verify it's running
+# In another terminal, verify it's running
 curl http://localhost:11434/api/tags
 ```
 

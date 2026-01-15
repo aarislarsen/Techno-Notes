@@ -120,6 +120,31 @@ chmod 700 uploads outputs logs 2>/dev/null || true
 touch uploads/.gitkeep outputs/.gitkeep logs/.gitkeep
 print_status "Application structure created"
 
+# Install Ollama
+print_step "Checking Ollama installation..."
+if command -v ollama &> /dev/null; then
+    print_status "Ollama already installed: $(ollama --version 2>&1 | head -n1)"
+else
+    print_info "Installing Ollama (this may take a few minutes)..."
+    print_info "You may be prompted for your sudo password"
+
+    # Download and run Ollama installer
+    if curl -fsSL https://ollama.com/install.sh | sh; then
+        print_status "Ollama installed successfully"
+
+        # Verify installation
+        if command -v ollama &> /dev/null; then
+            print_status "Ollama verified: $(ollama --version 2>&1 | head -n1)"
+        else
+            print_error "Ollama installation completed but command not found"
+            print_info "You may need to restart your terminal or log out/in"
+        fi
+    else
+        print_error "Ollama installation failed"
+        print_info "You can install manually later with: curl -fsSL https://ollama.com/install.sh | sh"
+    fi
+fi
+
 # Summary
 echo ""
 echo "========================================="
@@ -142,6 +167,11 @@ fi
 print_status "✅ All prerequisites installed"
 print_status "✅ Virtual environment configured"
 print_status "✅ Python dependencies installed"
+if command -v ollama &> /dev/null; then
+    print_status "✅ Ollama installed and ready"
+else
+    print_info "⚠️  Ollama installation pending - see instructions above"
+fi
 echo ""
 
 # Verify
