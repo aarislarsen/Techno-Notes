@@ -451,30 +451,29 @@ class LLMManager:
         }
     
     def auto_setup(self, model_name='llama2'):
-        """Automated setup with validation"""
+        """Automated model download and service startup"""
         if not validate_model_name(model_name):
             self.setup_progress['error'] = "Invalid model name"
             logger.error(f"Invalid model name requested: {model_name}")
             return False
-        
+
         with self.setup_lock:
             try:
                 logger.info(f"Starting auto-setup for model: {model_name}")
-                
-                # Step 1: Check/Install Ollama
+
+                # Step 1: Check Ollama is installed
                 if not self.check_ollama_installed():
-                    self.update_progress('installing', 'Installing Ollama...', 10)
-                    if not self.install_ollama():
-                        logger.error("Ollama installation failed")
-                        return False
-                else:
-                    self.update_progress('checking', 'Ollama already installed', 30)
-                
+                    self.update_progress('error', 'Ollama not installed. Please run ./setup.sh first', 0)
+                    logger.error("Ollama not installed - setup.sh must be run first")
+                    return False
+
+                self.update_progress('checking', 'Ollama detected', 20)
+
                 # Step 2: Start service
                 if not self.start_ollama_service():
                     logger.error("Failed to start Ollama service")
                     return False
-                
+
                 # Step 3: Download model
                 if not self.check_model_downloaded(model_name):
                     if not self.download_model(model_name):
@@ -482,14 +481,14 @@ class LLMManager:
                         return False
                 else:
                     self.update_progress('checking', f'Model {model_name} already downloaded', 90)
-                
+
                 # Mark complete
                 self.config['setup_complete'] = True
                 self.save_config()
                 self.update_progress('complete', 'Setup complete - System ready', 100)
                 logger.info("Auto-setup completed successfully")
                 return True
-                
+
             except Exception as e:
                 self.setup_progress['error'] = str(e)[:200]
                 logger.error(f"Auto-setup error: {e}")
