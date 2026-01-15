@@ -1,9 +1,9 @@
 #!/bin/bash
-# Run script for PDF LLM Processor
+# Run script for Techno-Notes
 
 cd "$(dirname "$0")"
 
-echo "=== Starting PDF LLM Processor ==="
+echo "=== Starting Techno-Notes ==="
 echo ""
 
 # Check if virtual environment exists

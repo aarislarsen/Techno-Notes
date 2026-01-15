@@ -1,4 +1,4 @@
-# PDF LLM Processor
+# Techno-Notes
 
 > 🚀 Automated PDF document analysis using local LLM (Ollama). Zero-configuration setup for Ubuntu/WSL.
 
@@ -275,7 +275,7 @@ sudo nano /etc/systemd/system/pdf-llm-processor.service
 Add this content (replace YOUR_USERNAME with your actual username):
 ```ini
 [Unit]
-Description=PDF LLM Processor
+Description=Techno-Notes
 After=network.target
 
 [Service]
