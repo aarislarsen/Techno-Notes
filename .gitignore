@@ -18,8 +18,11 @@ logs/*
 !uploads/.gitkeep
 !outputs/.gitkeep
 !logs/.gitkeep
+word_templates/*
+!word_templates/.gitkeep
 llm_config.json
 .api_keys.json
+processing_times.json
 
 # OS
 .DS_Store

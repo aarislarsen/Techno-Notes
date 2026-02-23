@@ -63,7 +63,7 @@
             font-size: 1.8em;
         }
 
-        #dropzone {
+        .dropzone {
             border: 3px dashed #30363d;
             border-radius: 8px;
             padding: 60px;
@@ -74,24 +74,24 @@
             transition: all 0.3s ease;
         }
 
-        #dropzone:hover:not(.disabled) {
+        .dropzone:hover:not(.disabled) {
             border-color: #f0883e;
             background: #2d333b;
         }
 
-        #dropzone.drag-over {
+        .dropzone.drag-over {
             border-color: #f0883e;
             background: #2d333b;
             transform: scale(1.02);
         }
 
-        #dropzone.disabled {
+        .dropzone.disabled {
             opacity: 0.5;
             pointer-events: none;
             cursor: not-allowed;
         }
 
-        #dropzone p {
+        .dropzone p {
             font-size: 1.2em;
             color: #8b949e;
         }
@@ -387,12 +387,10 @@
             <div id="setup-controls" class="hidden">
                 <label>Select LLM Model:</label>
                 <select id="model-select">
-                    <option value="llama2">llama2 (7B) - Recommended</option>
-                    <option value="llama2:13b">llama2:13b (13B) - Better Quality</option>
-                    <option value="llama3.2:1b">llama3.2:1b (1B) - Fastest</option>
-                    <option value="llama3.2:3b">llama3.2:3b (3B) - Fast</option>
-                    <option value="mistral">mistral (7B) - Efficient</option>
-                    <option value="phi">phi (2.7B) - Small & Fast</option>
+                    <option value="mistral-nemo:12b">Mistral NeMo (12B) - Recommended</option>
+                    <option value="qwen2.5:7b">Qwen 2.5 (7B) - Fast</option>
+                    <option value="qwen2.5:14b">Qwen 2.5 (14B) - Best Quality</option>
+                    <option value="command-r:35b">Command R (35B) - Long Context</option>
                 </select>
                 <button onclick="startAutoSetup()" class="success" id="setup-btn">
                     📥 Download Model & Start Service
@@ -432,6 +430,20 @@
             <div id="ollama-config" class="provider-section active">
                 <h3 style="margin-bottom: 15px; color: #e6edf3;">Local Ollama Configuration</h3>
                 <p style="color: #8b949e; margin-bottom: 10px;">Using local model - All data stays on your machine</p>
+                <label for="ollama-model">Model:</label>
+                <select id="ollama-model" onchange="saveOllamaModel()">
+                    <option value="mistral-nemo:12b">Mistral NeMo (12B)</option>
+                    <option value="qwen2.5:7b">Qwen 2.5 (7B)</option>
+                    <option value="qwen2.5:14b">Qwen 2.5 (14B)</option>
+                    <option value="command-r:35b">Command R (35B)</option>
+                </select>
+                <div id="ollama-download-progress" class="hidden" style="margin-top: 15px;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="ollama-progress-fill">0%</div>
+                    </div>
+                    <p id="ollama-download-text" style="margin-top: 8px; font-size: 14px; color: #8b949e;"></p>
+                </div>
+                <div id="ollama-status" style="margin-top: 10px;"></div>
             </div>
 
             <div id="chatgpt-config" class="provider-section hidden">
@@ -474,13 +486,32 @@
             <textarea id="prompt-editor" placeholder="Enter your analysis prompt..."></textarea>
             <button onclick="savePrompt()">💾 Save Prompt</button>
             
-            <h2 style="margin-top: 40px;">📤 Upload PDF</h2>
-            <div id="dropzone" class="disabled">
-                <p>📄 Drag and drop PDF here or click to select</p>
+            <h2 style="margin-top: 40px;">📄 Word Template (Optional)</h2>
+            <p style="color: #8b949e; margin-bottom: 10px;">Upload a .docx template to style your output documents. The LLM will follow its structure and formatting.</p>
+            <div id="template-status" style="margin: 10px 0; padding: 15px; border-radius: 6px; border-left: 4px solid #30363d; background: #21262d;">
+                <span id="template-info" style="color: #8b949e; font-size: 15px;">Checking template status...</span>
+                <button onclick="deleteTemplate()" class="small-button" id="delete-template-btn" style="background: #da3633; display: none; margin-left: 15px; padding: 6px 14px; font-size: 13px;">🗑️ Remove</button>
+            </div>
+            <div id="template-dropzone" class="dropzone" style="padding: 40px;">
+                <p>📄 Drag and drop .docx template here or click to select</p>
                 <p style="font-size: 0.9em; color: #999; margin-top: 10px;">Maximum file size: 50MB</p>
-                <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+                <input type="file" id="templateInput" accept=".docx" style="display: none;">
+            </div>
+
+            <h2 style="margin-top: 40px;">📤 Upload Document</h2>
+            <div id="dropzone" class="dropzone disabled">
+                <p>📄 Drag and drop PDF or LaTeX ZIP here, or click to select</p>
+                <p style="font-size: 0.9em; color: #999; margin-top: 10px;">Supported: .pdf, .zip (containing .tex files) — Max 50MB</p>
+                <input type="file" id="fileInput" accept=".pdf,.zip" style="display: none;">
             </div>
             
+            <div id="processing-progress" class="hidden" style="margin: 20px 0;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="processing-progress-fill">0%</div>
+                </div>
+                <p id="processing-progress-text" style="margin-top: 8px; font-size: 14px; color: #8b949e;"></p>
+            </div>
+
             <div id="status"></div>
         </div>
         
@@ -497,6 +528,28 @@
     <script>
         let systemReady = false;
         let statusCheckInterval;
+        let avgProcessingSeconds = null;
+
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.round(seconds % 60);
+            if (mins > 0) {
+                return secs > 0 ? `${mins} min ${secs} sec` : `${mins} min`;
+            }
+            return `${secs} sec`;
+        }
+
+        async function loadAvgProcessingTime() {
+            try {
+                const response = await fetch('/get_avg_processing_time');
+                if (response.ok) {
+                    const data = await response.json();
+                    avgProcessingSeconds = data.avg_seconds;
+                }
+            } catch (error) {
+                console.error('Failed to load avg processing time:', error);
+            }
+        }
 
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -520,7 +573,9 @@
                     document.getElementById('main-section').classList.remove('hidden');
                     document.getElementById('dropzone').classList.remove('disabled');
                     loadPrompt();
+                    loadTemplateStatus();
                     loadProviderConfig();
+                    loadAvgProcessingTime();
 
                     if (statusCheckInterval) {
                         clearInterval(statusCheckInterval);
@@ -645,6 +700,113 @@
             }
         }
 
+        // Template management (drag & drop)
+        const templateDropzone = document.getElementById('template-dropzone');
+        const templateInput = document.getElementById('templateInput');
+
+        templateDropzone.onclick = () => { templateInput.click(); };
+
+        templateDropzone.ondragover = (e) => {
+            e.preventDefault();
+            templateDropzone.classList.add('drag-over');
+        };
+
+        templateDropzone.ondragleave = () => {
+            templateDropzone.classList.remove('drag-over');
+        };
+
+        templateDropzone.ondrop = (e) => {
+            e.preventDefault();
+            templateDropzone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) {
+                uploadTemplate(e.dataTransfer.files[0]);
+            }
+        };
+
+        templateInput.onchange = (e) => {
+            if (e.target.files.length > 0) {
+                uploadTemplate(e.target.files[0]);
+            }
+        };
+
+        async function loadTemplateStatus() {
+            try {
+                const response = await fetch('/get_template_status');
+                if (!response.ok) throw new Error('Failed to load template status');
+                const data = await response.json();
+                const statusBox = document.getElementById('template-status');
+                const info = document.getElementById('template-info');
+                const deleteBtn = document.getElementById('delete-template-btn');
+                const dropzone = document.getElementById('template-dropzone');
+                if (data.has_template) {
+                    info.innerHTML = '✅ Template active: <strong style="color: #e6edf3;">' + escapeHtml(data.filename) + '</strong> — Output will be a styled .docx file';
+                    info.style.color = '#7ee787';
+                    statusBox.style.background = '#1a472a';
+                    statusBox.style.borderLeftColor = '#238636';
+                    deleteBtn.style.display = 'inline-block';
+                    dropzone.style.display = 'none';
+                } else {
+                    info.textContent = 'No template uploaded. Output will be plain text (.txt).';
+                    info.style.color = '#8b949e';
+                    statusBox.style.background = '#21262d';
+                    statusBox.style.borderLeftColor = '#30363d';
+                    deleteBtn.style.display = 'none';
+                    dropzone.style.display = '';
+                }
+            } catch (error) {
+                console.error('Failed to load template status:', error);
+            }
+        }
+
+        async function uploadTemplate(file) {
+            if (!file) return;
+            if (!file.name.toLowerCase().endsWith('.docx')) {
+                showStatus('❌ Please select a .docx file', 'error');
+                return;
+            }
+            if (file.size > 50 * 1024 * 1024) {
+                showStatus('❌ Template too large (max 50MB)', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/upload_template', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!response.ok || data.error) {
+                    throw new Error(data.error || 'Upload failed');
+                }
+                showStatus('✅ Template uploaded successfully', 'success');
+                loadTemplateStatus();
+            } catch (error) {
+                console.error('Template upload failed:', error);
+                showStatus('❌ ' + error.message, 'error');
+            }
+            templateInput.value = '';
+        }
+
+        async function deleteTemplate() {
+            try {
+                const response = await fetch('/delete_template', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Delete failed');
+                }
+                showStatus('✅ Template removed', 'success');
+                loadTemplateStatus();
+            } catch (error) {
+                console.error('Template delete failed:', error);
+                showStatus('❌ ' + error.message, 'error');
+            }
+        }
+
         const dropzone = document.getElementById('dropzone');
         const fileInput = document.getElementById('fileInput');
         const status = document.getElementById('status');
@@ -686,8 +848,9 @@
                 return;
             }
             
-            if (!file.name.toLowerCase().endsWith('.pdf')) {
-                showStatus('❌ Please select a PDF file', 'error');
+            const fname = file.name.toLowerCase();
+            if (!fname.endsWith('.pdf') && !fname.endsWith('.zip')) {
+                showStatus('❌ Please select a PDF or ZIP file', 'error');
                 return;
             }
             
@@ -696,8 +859,36 @@
                 return;
             }
 
-            showStatus('⏳ Processing PDF... This may take a few minutes.', 'info');
-            
+            // Show progress bar with countdown
+            const progressDiv = document.getElementById('processing-progress');
+            const progressFill = document.getElementById('processing-progress-fill');
+            const progressText = document.getElementById('processing-progress-text');
+            progressDiv.classList.remove('hidden');
+            progressFill.style.width = '100%';
+            progressFill.textContent = '';
+
+            const estimatedSeconds = avgProcessingSeconds || 120;
+            const countdownStart = Date.now();
+            let processingDone = false;
+
+            const countdownInterval = setInterval(() => {
+                if (processingDone) return;
+                const elapsed = (Date.now() - countdownStart) / 1000;
+                const remaining = Math.max(0, Math.round(estimatedSeconds - elapsed));
+                const percent = Math.max(5, Math.round((remaining / estimatedSeconds) * 100));
+
+                progressFill.style.width = percent + '%';
+                progressFill.textContent = remaining > 0 ? formatDuration(remaining) : '';
+
+                if (remaining > 0) {
+                    progressText.textContent = '⏳ Processing document... ~' + formatDuration(remaining) + ' remaining (estimated)';
+                } else {
+                    progressFill.style.width = '5%';
+                    progressFill.textContent = '';
+                    progressText.textContent = '⏳ Still processing... Taking longer than usual';
+                }
+            }, 500);
+
             const formData = new FormData();
             formData.append('file', file);
 
@@ -706,25 +897,44 @@
                     method: 'POST',
                     body: formData
                 });
-                
+
+                processingDone = true;
+                clearInterval(countdownInterval);
+
                 const data = await response.json();
-                
+
                 if (!response.ok || data.error) {
                     throw new Error(data.error || 'Processing failed');
                 }
-                
+
+                progressFill.style.width = '0%';
+                progressFill.textContent = '';
+                progressText.textContent = '✅ Done!';
+
                 const a = document.createElement('a');
                 a.href = `/download/${encodeURIComponent(data.output_file)}`;
                 a.download = data.original_name;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
-                
-                showStatus('✅ Processing complete! Download started.', 'success');
-                
+
+                let successMsg = '✅ Processing complete!';
+                if (data.duration) {
+                    successMsg += ' (took ' + formatDuration(data.duration) + ')';
+                }
+                successMsg += ' Download started.';
+                showStatus(successMsg, 'success');
+
+                setTimeout(() => { progressDiv.classList.add('hidden'); }, 3000);
+
+                loadAvgProcessingTime();
+
                 fileInput.value = '';
-                
+
             } catch (error) {
+                processingDone = true;
+                clearInterval(countdownInterval);
+                progressDiv.classList.add('hidden');
                 console.error('Processing error:', error);
                 showStatus(`❌ Error: ${escapeHtml(error.message)}`, 'error');
             }
@@ -866,6 +1076,121 @@
             }
         }
 
+        let ollamaDownloadInterval = null;
+
+        async function saveOllamaModel() {
+            const model = document.getElementById('ollama-model').value;
+            const statusDiv = document.getElementById('ollama-status');
+            const modelSelect = document.getElementById('ollama-model');
+
+            statusDiv.textContent = '';
+            statusDiv.className = '';
+
+            try {
+                const response = await fetch('/pull_model', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({model_name: model})
+                });
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Failed to switch model');
+                }
+
+                if (data.already_available) {
+                    statusDiv.textContent = '✅ Model switched to ' + model;
+                    statusDiv.className = 'success';
+                    setTimeout(() => { statusDiv.textContent = ''; statusDiv.className = ''; }, 5000);
+                    return;
+                }
+
+                if (data.downloading) {
+                    // Disable controls during download
+                    modelSelect.disabled = true;
+                    document.getElementById('dropzone').classList.add('disabled');
+                    document.getElementById('ollama-download-progress').classList.remove('hidden');
+                    document.getElementById('ollama-progress-fill').style.width = '0%';
+                    document.getElementById('ollama-progress-fill').textContent = '0%';
+                    document.getElementById('ollama-download-text').textContent = 'Starting download of ' + model + '...';
+
+                    // Poll for progress
+                    ollamaDownloadInterval = setInterval(() => pollDownloadProgress(model), 1500);
+                }
+            } catch (error) {
+                console.error('Failed to pull model:', error);
+                statusDiv.textContent = '❌ ' + error.message;
+                statusDiv.className = 'error';
+            }
+        }
+
+        async function pollDownloadProgress(model) {
+            try {
+                const response = await fetch('/pull_model_status');
+                if (!response.ok) return;
+                const data = await response.json();
+
+                const fill = document.getElementById('ollama-progress-fill');
+                const text = document.getElementById('ollama-download-text');
+                const percent = Math.min(100, Math.max(0, data.percent || 0));
+
+                fill.style.width = percent + '%';
+                fill.textContent = percent + '%';
+
+                if (data.status === 'downloading' || data.active) {
+                    let msg = 'Downloading ' + model + '... ' + percent + '%';
+                    if (data.eta_seconds !== null && data.eta_seconds > 0) {
+                        msg += ' — ~' + formatDuration(data.eta_seconds) + ' remaining';
+                    }
+                    if (data.total > 0) {
+                        msg += ' (' + formatBytes(data.completed) + ' / ' + formatBytes(data.total) + ')';
+                    }
+                    text.textContent = msg;
+                }
+
+                if (data.status === 'complete') {
+                    clearInterval(ollamaDownloadInterval);
+                    ollamaDownloadInterval = null;
+                    fill.style.width = '100%';
+                    fill.textContent = '100%';
+                    text.textContent = 'Download complete!';
+
+                    setTimeout(() => {
+                        document.getElementById('ollama-download-progress').classList.add('hidden');
+                    }, 3000);
+
+                    document.getElementById('ollama-model').disabled = false;
+                    document.getElementById('dropzone').classList.remove('disabled');
+
+                    const statusDiv = document.getElementById('ollama-status');
+                    statusDiv.textContent = '✅ Model ' + model + ' downloaded and active';
+                    statusDiv.className = 'success';
+                    setTimeout(() => { statusDiv.textContent = ''; statusDiv.className = ''; }, 5000);
+                }
+
+                if (data.status === 'error') {
+                    clearInterval(ollamaDownloadInterval);
+                    ollamaDownloadInterval = null;
+                    document.getElementById('ollama-download-progress').classList.add('hidden');
+                    document.getElementById('ollama-model').disabled = false;
+                    document.getElementById('dropzone').classList.remove('disabled');
+
+                    const statusDiv = document.getElementById('ollama-status');
+                    statusDiv.textContent = '❌ Download failed: ' + (data.error || 'Unknown error');
+                    statusDiv.className = 'error';
+                }
+            } catch (error) {
+                console.error('Failed to poll download status:', error);
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
+        }
+
         async function loadProviderConfig() {
             try {
                 // Load current provider
@@ -875,6 +1200,7 @@
                     if (data.success) {
                         const provider = data.provider || 'ollama';
                         const apiModel = data.api_model || 'gpt-4o-mini';
+                        const modelName = data.model_name || 'llama2';
 
                         // Set radio button
                         const radio = document.querySelector(`input[name="provider"][value="${provider}"]`);
@@ -883,6 +1209,7 @@
                         }
 
                         // Set model selects
+                        document.getElementById('ollama-model').value = modelName;
                         if (provider === 'chatgpt') {
                             document.getElementById('chatgpt-model').value = apiModel;
                         } else if (provider === 'perplexity') {

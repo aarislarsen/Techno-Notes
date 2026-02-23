@@ -115,9 +115,9 @@ fi
 
 # Create structure
 print_step "Creating application structure..."
-mkdir -p uploads outputs logs
-chmod 700 uploads outputs logs 2>/dev/null || true
-touch uploads/.gitkeep outputs/.gitkeep logs/.gitkeep
+mkdir -p uploads outputs logs word_templates
+chmod 700 uploads outputs logs word_templates 2>/dev/null || true
+touch uploads/.gitkeep outputs/.gitkeep logs/.gitkeep word_templates/.gitkeep
 print_status "Application structure created"
 
 # Install Ollama
@@ -176,7 +176,7 @@ echo ""
 
 # Verify
 print_step "Verifying installation..."
-if python3 -c "import flask, PyPDF2, requests; print('OK')" 2>/dev/null; then
+if python3 -c "import flask, PyPDF2, requests, docx; print('OK')" 2>/dev/null; then
     print_status "Python dependencies verified"
 else
     print_error "Dependency verification failed"

@@ -1,0 +1,13 @@
+Analyze this document, respect multi-column layout, and provide a summary in the same format as the template document.
+
+When determining the review areas, focus on the descriptions in the "Executive summary - Context" chapter, and the Scope appendix at the end of the document.
+
+When describing how the delivery was carried out, focus on the description in the "Executive summary - Context" chapter, and the "Work performed" appendix at the end of the document.
+
+Always state that the results were compiled in a formal report.
+
+For the "Recommended Next Steps" of the template, list the recommendations made in the "Executive summary - Key recommendations" chapter of the report.
+
+List the technical lead for the delivery as "Andreas Aaris-Larsen, Principal security consultant, +45 29332205, andreas.aaris.larsen@truesec.com - My Teams is often turned off, my Slack and email is not."
+
+The output word document MUST follow the same structure as the template.

@@ -15,6 +15,8 @@ import signal
 import logging
 from datetime import datetime
 from functools import wraps
+import re
+import zipfile
 
 # Configure logging
 logging.basicConfig(
@@ -35,8 +37,11 @@ app.config['SECRET_KEY'] = secrets.token_hex(32)
 PROMPT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt.txt')
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'llm_config.json')
 API_KEYS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.api_keys.json')
+TEMPLATE_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'word_templates')
+TEMPLATE_FILE = os.path.join(TEMPLATE_FOLDER, 'template.docx')
+TIMING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'processing_times.json')
 OLLAMA_URL = 'http://127.0.0.1:11434'
-ALLOWED_EXTENSIONS = {'pdf'}
+ALLOWED_EXTENSIONS = {'pdf', 'zip'}
 
 # Rate limiting - simple in-memory store
 request_times = {}
@@ -44,14 +49,17 @@ RATE_LIMIT = 10  # requests per minute
 RATE_WINDOW = 60  # seconds
 
 # Create directories with proper permissions
-for folder in [app.config['UPLOAD_FOLDER'], app.config['OUTPUT_FOLDER'], 'logs']:
+for folder in [app.config['UPLOAD_FOLDER'], app.config['OUTPUT_FOLDER'], 'logs', TEMPLATE_FOLDER]:
     os.makedirs(folder, mode=0o700, exist_ok=True)
 
 # Whitelist of allowed models
 ALLOWED_MODELS = {
-    'llama2', 'llama2:7b', 'llama2:13b', 'llama2:70b',
-    'llama3', 'llama3:8b', 'llama3.2', 'llama3.2:1b', 'llama3.2:3b',
-    'mistral', 'mistral:7b',
+    'llama2:13b', 'llama2:70b',
+    'llama3', 'llama3:8b', 'llama3.2:1b', 'llama3.2:3b',
+    'llama3.2-vision', 'llama3.2-vision:11b',
+    'mistral-nemo', 'mistral-nemo:12b',
+    'qwen2.5', 'qwen2.5:7b', 'qwen2.5:14b',
+    'command-r', 'command-r:35b',
     'phi', 'phi:2.7b', 'phi3',
     'codellama', 'codellama:7b',
     'gemma', 'gemma:2b', 'gemma:7b'
@@ -106,13 +114,22 @@ def validate_model_name(model_name):
     return False
 
 def sanitize_input(text, max_length=10000):
-    """Sanitize text input"""
+    """Sanitize text input for HTML contexts"""
     if not isinstance(text, str):
         return ""
     text = text[:max_length]
     text = text.replace('\x00', '')
     # Remove potential XSS vectors
     text = text.replace('<', '&lt;').replace('>', '&gt;')
+    return text
+
+
+def sanitize_text(text, max_length=10000):
+    """Sanitize plain text (no HTML escaping) for non-HTML contexts like LLM prompts"""
+    if not isinstance(text, str):
+        return ""
+    text = text[:max_length]
+    text = text.replace('\x00', '')
     return text
 
 def safe_remove_file(filepath):
@@ -136,6 +153,17 @@ class LLMManager:
             'progress': 0,
             'error': None
         }
+        self.model_download_progress = {
+            'active': False,
+            'model': '',
+            'status': '',
+            'total': 0,
+            'completed': 0,
+            'percent': 0,
+            'started_at': None,
+            'eta_seconds': None,
+            'error': None
+        }
     
     def load_config(self):
         """Safely load configuration"""
@@ -146,7 +174,7 @@ class LLMManager:
                     if not isinstance(config, dict):
                         raise ValueError("Invalid config format")
                     if 'model_name' in config and not validate_model_name(config['model_name']):
-                        config['model_name'] = 'llama2'
+                        config['model_name'] = 'qwen2.5:14b'
                     return config
         except (json.JSONDecodeError, ValueError, IOError) as e:
             logger.error(f"Config load error: {e}")
@@ -154,7 +182,7 @@ class LLMManager:
         return {
             'ollama_installed': False,
             'ollama_path': None,
-            'model_name': 'llama2',
+            'model_name': 'qwen2.5:14b',
             'model_downloaded': False,
             'setup_complete': False,
             'provider': 'ollama',  # Default to local ollama
@@ -435,6 +463,90 @@ class LLMManager:
             logger.error(f"Model download error: {e}")
             return False
     
+    def check_model_available(self, model_name):
+        """Check if a model is already available locally via Ollama API"""
+        try:
+            response = requests.get(f'{OLLAMA_URL}/api/tags', timeout=5)
+            if response.status_code == 200:
+                models = response.json().get('models', [])
+                for m in models:
+                    name = m.get('name', '')
+                    # Match "llama2:latest" against "llama2", or exact match
+                    if name == model_name or name.startswith(model_name + ':') or name == model_name + ':latest':
+                        return True
+        except requests.RequestException:
+            pass
+        return False
+
+    def pull_model_async(self, model_name):
+        """Download a model via Ollama REST API with streaming progress"""
+        self.model_download_progress = {
+            'active': True,
+            'model': model_name,
+            'status': 'downloading',
+            'total': 0,
+            'completed': 0,
+            'percent': 0,
+            'started_at': time.time(),
+            'eta_seconds': None,
+            'error': None
+        }
+
+        try:
+            response = requests.post(
+                f'{OLLAMA_URL}/api/pull',
+                json={'name': model_name, 'stream': True},
+                stream=True,
+                timeout=3600
+            )
+            response.raise_for_status()
+
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                status = data.get('status', '')
+                total = data.get('total', 0)
+                completed = data.get('completed', 0)
+
+                if total and total > 0:
+                    self.model_download_progress['total'] = total
+                    self.model_download_progress['completed'] = completed
+                    self.model_download_progress['percent'] = min(99, int(completed * 100 / total))
+
+                    elapsed = time.time() - self.model_download_progress['started_at']
+                    if completed > 0 and elapsed > 2:
+                        remaining_bytes = total - completed
+                        speed = completed / elapsed
+                        if speed > 0:
+                            self.model_download_progress['eta_seconds'] = round(remaining_bytes / speed)
+
+                self.model_download_progress['status_message'] = status
+
+                if data.get('error'):
+                    raise Exception(data['error'])
+
+            # Download complete
+            self.model_download_progress['percent'] = 100
+            self.model_download_progress['eta_seconds'] = 0
+            self.model_download_progress['status'] = 'complete'
+            self.model_download_progress['active'] = False
+
+            self.config['model_name'] = model_name
+            self.config['model_downloaded'] = True
+            self.save_config()
+            logger.info(f"Model {model_name} pulled successfully")
+
+        except Exception as e:
+            logger.error(f"Model pull error: {e}")
+            self.model_download_progress['status'] = 'error'
+            self.model_download_progress['error'] = str(e)[:200]
+            self.model_download_progress['active'] = False
+
     def get_status(self):
         """Get system status"""
         ollama_running = False
@@ -453,7 +565,7 @@ class LLMManager:
             'ready': self.config['ollama_installed'] and ollama_running and self.config['model_downloaded']
         }
     
-    def auto_setup(self, model_name='llama2'):
+    def auto_setup(self, model_name='qwen2.5:14b'):
         """Automated model download and service startup"""
         if not validate_model_name(model_name):
             self.setup_progress['error'] = "Invalid model name"
@@ -518,7 +630,7 @@ def read_prompt():
         if os.path.exists(PROMPT_FILE):
             with open(PROMPT_FILE, 'r', encoding='utf-8') as f:
                 content = f.read(50000)
-                return sanitize_input(content, 10000)
+                return sanitize_text(content, 10000)
     except IOError as e:
         logger.error(f"Failed to read prompt file: {e}")
     return "Analyze this PDF document and provide a summary."
@@ -526,7 +638,7 @@ def read_prompt():
 def save_prompt(prompt_text):
     """Safely save prompt file"""
     try:
-        prompt_text = sanitize_input(prompt_text, 10000)
+        prompt_text = sanitize_text(prompt_text, 10000)
         with open(PROMPT_FILE, 'w', encoding='utf-8') as f:
             f.write(prompt_text)
         try:
@@ -538,6 +650,154 @@ def save_prompt(prompt_text):
     except IOError as e:
         logger.error(f"Failed to save prompt: {e}")
         raise Exception(f"Failed to save prompt: {e}")
+
+def load_processing_times():
+    """Load processing time history from disk"""
+    try:
+        if os.path.exists(TIMING_FILE):
+            with open(TIMING_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return [float(t) for t in data if isinstance(t, (int, float))]
+    except (IOError, json.JSONDecodeError, ValueError) as e:
+        logger.error(f"Failed to load processing times: {e}")
+    return []
+
+
+def save_processing_time(duration_seconds):
+    """Append a processing duration and save (keep last 50)"""
+    try:
+        times = load_processing_times()
+        times.append(round(duration_seconds, 2))
+        times = times[-50:]
+        with open(TIMING_FILE, 'w', encoding='utf-8') as f:
+            json.dump(times, f)
+    except IOError as e:
+        logger.error(f"Failed to save processing time: {e}")
+
+
+def get_average_processing_time():
+    """Return the average processing time in seconds, or None if no history"""
+    times = load_processing_times()
+    if not times:
+        return None
+    return round(sum(times) / len(times), 1)
+
+
+def extract_template_structure(template_path):
+    """Extract the structure of a Word template for LLM guidance"""
+    try:
+        from docx import Document
+        doc = Document(template_path)
+        structure_lines = []
+        for para in doc.paragraphs:
+            style_name = para.style.name if para.style else 'Normal'
+            text = para.text.strip()
+            if text:
+                structure_lines.append(f"[{style_name}] {text}")
+            elif style_name != 'Normal':
+                structure_lines.append(f"[{style_name}] (empty)")
+        if not structure_lines:
+            return ""
+        return (
+            "IMPORTANT: Format your response following this document template structure. "
+            "Use markdown headings (#, ##, ###) for headings, bullet points (- ) for lists, "
+            "and plain text for normal paragraphs. Match the section order and hierarchy below:\n\n"
+            + "\n".join(structure_lines)
+        )
+    except Exception as e:
+        logger.error(f"Failed to extract template structure: {e}")
+        return ""
+
+
+def generate_docx_from_template(template_path, llm_response):
+    """Generate a .docx file from the template with LLM response content"""
+    from docx import Document
+    from docx.shared import Pt
+
+    doc = Document(template_path)
+
+    # Clear existing template content
+    for para in doc.paragraphs:
+        p_element = para._element
+        p_element.getparent().remove(p_element)
+
+    # Also clear any tables from template
+    for table in doc.tables:
+        t_element = table._element
+        t_element.getparent().remove(t_element)
+
+    # Collect available style names for safe fallback
+    available_styles = {s.name for s in doc.styles}
+
+    def get_style(preferred, fallback='Normal'):
+        return preferred if preferred in available_styles else fallback
+
+    # Parse LLM response (markdown-like) and add to document
+    lines = llm_response.split('\n')
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if not stripped:
+            i += 1
+            continue
+
+        # Heading 1: # Heading
+        if stripped.startswith('# ') and not stripped.startswith('## '):
+            heading_text = stripped[2:].strip()
+            heading_text = re.sub(r'\*\*(.+?)\*\*', r'\1', heading_text)
+            doc.add_paragraph(heading_text, style=get_style('Heading 1'))
+
+        # Heading 2: ## Heading
+        elif stripped.startswith('## ') and not stripped.startswith('### '):
+            heading_text = stripped[3:].strip()
+            heading_text = re.sub(r'\*\*(.+?)\*\*', r'\1', heading_text)
+            doc.add_paragraph(heading_text, style=get_style('Heading 2'))
+
+        # Heading 3: ### Heading
+        elif stripped.startswith('### '):
+            heading_text = stripped[4:].strip()
+            heading_text = re.sub(r'\*\*(.+?)\*\*', r'\1', heading_text)
+            doc.add_paragraph(heading_text, style=get_style('Heading 3'))
+
+        # Bullet list: - item or * item
+        elif re.match(r'^[-*]\s+', stripped):
+            item_text = re.sub(r'^[-*]\s+', '', stripped)
+            para = doc.add_paragraph(style=get_style('List Bullet'))
+            _add_formatted_runs(para, item_text)
+
+        # Numbered list: 1. item
+        elif re.match(r'^\d+\.\s+', stripped):
+            item_text = re.sub(r'^\d+\.\s+', '', stripped)
+            para = doc.add_paragraph(style=get_style('List Number'))
+            _add_formatted_runs(para, item_text)
+
+        # Normal paragraph
+        else:
+            para = doc.add_paragraph(style=get_style('Normal'))
+            _add_formatted_runs(para, stripped)
+
+        i += 1
+
+    return doc
+
+
+def _add_formatted_runs(paragraph, text):
+    """Add text to a paragraph, handling **bold** and *italic* markdown"""
+    # Split on bold (**text**) and italic (*text*) patterns
+    parts = re.split(r'(\*\*.*?\*\*|\*.*?\*)', text)
+    for part in parts:
+        if part.startswith('**') and part.endswith('**'):
+            run = paragraph.add_run(part[2:-2])
+            run.bold = True
+        elif part.startswith('*') and part.endswith('*') and len(part) > 2:
+            run = paragraph.add_run(part[1:-1])
+            run.italic = True
+        else:
+            paragraph.add_run(part)
+
 
 def extract_pdf_text(pdf_path):
     """Safely extract PDF text"""
@@ -586,6 +846,141 @@ def extract_pdf_text(pdf_path):
     
     logger.info(f"Extracted {len(text)} characters from PDF")
     return sanitize_input(text, 500000)
+
+def extract_latex_text(zip_path):
+    """Extract readable text from LaTeX .tex files inside a ZIP archive"""
+    if not os.path.isfile(zip_path):
+        raise Exception("ZIP file not found")
+
+    if not zipfile.is_zipfile(zip_path):
+        raise Exception("Invalid ZIP file")
+
+    logger.info(f"Extracting LaTeX text from ZIP ({os.path.getsize(zip_path)} bytes)")
+    texts = []
+    total_size = 0
+    max_uncompressed = 100 * 1024 * 1024  # 100MB uncompressed limit
+
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            # Check for zip bomb
+            for info in zf.infolist():
+                total_size += info.file_size
+                if total_size > max_uncompressed:
+                    raise Exception("ZIP contents too large (over 100MB uncompressed)")
+
+            # Find and read .tex files
+            tex_files = [f for f in zf.namelist()
+                         if f.lower().endswith('.tex')
+                         and '..' not in f
+                         and not f.startswith('/')]
+
+            if not tex_files:
+                raise Exception("No .tex files found in ZIP archive")
+
+            tex_files.sort()
+            logger.info(f"Found {len(tex_files)} .tex files in ZIP")
+
+            for tex_file in tex_files:
+                try:
+                    raw = zf.read(tex_file)
+                    try:
+                        content = raw.decode('utf-8')
+                    except UnicodeDecodeError:
+                        content = raw.decode('latin-1')
+
+                    cleaned = _clean_latex(content)
+                    if cleaned.strip():
+                        texts.append(f"--- {tex_file} ---\n{cleaned}")
+                except Exception as e:
+                    logger.warning(f"Failed to read {tex_file}: {e}")
+                    continue
+
+                if sum(len(t) for t in texts) > 500000:
+                    logger.info("Text limit reached (500KB)")
+                    break
+
+    except zipfile.BadZipFile:
+        raise Exception("Corrupted ZIP file")
+    except Exception as e:
+        if "No .tex files" in str(e) or "too large" in str(e):
+            raise
+        logger.error(f"ZIP extraction failed: {e}")
+        raise Exception(f"ZIP extraction failed: {str(e)[:100]}")
+
+    combined = "\n\n".join(texts)
+    if not combined.strip():
+        raise Exception("No readable text found in LaTeX files")
+
+    logger.info(f"Extracted {len(combined)} characters from LaTeX ZIP")
+    return sanitize_text(combined, 500000)
+
+
+def _clean_latex(text):
+    """Convert LaTeX source to readable text, preserving structure"""
+    # Remove comments
+    text = re.sub(r'(?<!\\)%.*$', '', text, flags=re.MULTILINE)
+
+    # Remove preamble (everything before \begin{document})
+    doc_match = re.search(r'\\begin\{document\}', text)
+    if doc_match:
+        text = text[doc_match.end():]
+
+    # Remove \end{document}
+    text = re.sub(r'\\end\{document\}', '', text)
+
+    # Convert structural commands to readable markers
+    text = re.sub(r'\\chapter\*?\{([^}]*)\}', r'\n# \1\n', text)
+    text = re.sub(r'\\section\*?\{([^}]*)\}', r'\n## \1\n', text)
+    text = re.sub(r'\\subsection\*?\{([^}]*)\}', r'\n### \1\n', text)
+    text = re.sub(r'\\subsubsection\*?\{([^}]*)\}', r'\n#### \1\n', text)
+    text = re.sub(r'\\paragraph\*?\{([^}]*)\}', r'\n**\1** ', text)
+
+    # Convert formatting to readable text
+    text = re.sub(r'\\textbf\{([^}]*)\}', r'**\1**', text)
+    text = re.sub(r'\\textit\{([^}]*)\}', r'*\1*', text)
+    text = re.sub(r'\\emph\{([^}]*)\}', r'*\1*', text)
+    text = re.sub(r'\\underline\{([^}]*)\}', r'\1', text)
+    text = re.sub(r'\\texttt\{([^}]*)\}', r'\1', text)
+
+    # Convert list items
+    text = re.sub(r'\\item\s*\[([^\]]*)\]', r'- \1: ', text)
+    text = re.sub(r'\\item\s*', r'- ', text)
+
+    # Remove environment wrappers but keep content
+    text = re.sub(r'\\begin\{(itemize|enumerate|description|quote|quotation|center|flushleft|flushright|abstract|figure|table)\*?\}', '', text)
+    text = re.sub(r'\\end\{(itemize|enumerate|description|quote|quotation|center|flushleft|flushright|abstract|figure|table)\*?\}', '', text)
+
+    # Remove commands we don't need
+    text = re.sub(r'\\(usepackage|documentclass|input|include|bibliography|bibliographystyle|label|ref|cite|pageref|eqref|url|href)\{[^}]*\}(\{[^}]*\})?', '', text)
+    text = re.sub(r'\\(newcommand|renewcommand|def|let|setlength|setcounter|addtocounter)\{[^}]*\}.*$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\\(vspace|hspace|vskip|hskip|bigskip|medskip|smallskip|noindent|clearpage|newpage|pagebreak|linebreak)\b\*?(\{[^}]*\})?', '', text)
+    text = re.sub(r'\\(maketitle|tableofcontents|listoffigures|listoftables)\b', '', text)
+
+    # Remove math environments but keep inline math readable
+    text = re.sub(r'\$\$.*?\$\$', '[equation]', text, flags=re.DOTALL)
+    text = re.sub(r'\\begin\{(equation|align|gather|multline)\*?\}.*?\\end\{\1\*?\}', '[equation]', text, flags=re.DOTALL)
+    text = re.sub(r'\$([^$]+)\$', r'\1', text)
+
+    # Remove remaining unknown commands (keep their arguments if present)
+    text = re.sub(r'\\[a-zA-Z]+\*?\{([^}]*)\}', r'\1', text)
+    text = re.sub(r'\\[a-zA-Z]+\*?', '', text)
+
+    # Clean up braces and special chars
+    text = text.replace('{', '').replace('}', '')
+    text = text.replace('~', ' ')
+    text = text.replace('\\\\', '\n')
+    text = text.replace('\\&', '&')
+    text = text.replace('\\%', '%')
+    text = text.replace('\\$', '$')
+    text = text.replace('\\_', '_')
+    text = text.replace('\\#', '#')
+
+    # Collapse excessive whitespace
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r' {2,}', ' ', text)
+
+    return text.strip()
+
 
 def load_api_keys():
     """Load API keys from file"""
@@ -738,12 +1133,15 @@ def query_perplexity(prompt, context, model='llama-3.1-sonar-small-128k-online')
 def query_ollama(prompt, context):
     """Query Ollama with timeout and validation"""
     prompt = sanitize_input(prompt, 10000)
-    context = sanitize_input(context, 100000)
+    context = sanitize_input(context, 500000)
 
     payload = {
         "model": llm_manager.config['model_name'],
         "prompt": f"{prompt}\n\nDocument content:\n{context}",
-        "stream": False
+        "stream": False,
+        "options": {
+            "num_ctx": 131072  # 128K token context window — handles up to ~100 pages
+        }
     }
 
     logger.info(f"Querying Ollama with model: {llm_manager.config['model_name']}")
@@ -752,7 +1150,7 @@ def query_ollama(prompt, context):
         response = requests.post(
             f'{OLLAMA_URL}/api/generate',
             json=payload,
-            timeout=300
+            timeout=1200
         )
         response.raise_for_status()
 
@@ -764,7 +1162,7 @@ def query_ollama(prompt, context):
 
     except requests.Timeout:
         logger.error("Ollama request timeout")
-        raise Exception("LLM request timeout (5 minutes)")
+        raise Exception("LLM request timeout (20 minutes)")
     except requests.RequestException as e:
         logger.error(f"Ollama request failed: {e}")
         raise Exception(f"LLM request failed: {str(e)[:100]}")
@@ -804,7 +1202,7 @@ def auto_setup():
         if not data or not isinstance(data, dict):
             return jsonify({'error': 'Invalid request'}), 400
         
-        model_name = data.get('model_name', 'llama2')
+        model_name = data.get('model_name', 'qwen2.5:14b')
         
         if not isinstance(model_name, str):
             return jsonify({'error': 'Invalid model name type'}), 400
@@ -868,6 +1266,54 @@ def set_model():
         logger.error(f"Set model error: {e}")
         return jsonify({'error': str(e)[:200]}), 500
 
+@app.route('/pull_model', methods=['POST'])
+@rate_limit
+def pull_model():
+    """Check if model is available, download if not"""
+    try:
+        data = request.get_json()
+        if not data or not isinstance(data, dict):
+            return jsonify({'error': 'Invalid request'}), 400
+
+        model_name = data.get('model_name')
+        if not isinstance(model_name, str):
+            return jsonify({'error': 'Invalid model name'}), 400
+
+        if not validate_model_name(model_name):
+            return jsonify({'error': 'Invalid model name'}), 400
+
+        # Check if already downloading
+        if llm_manager.model_download_progress.get('active'):
+            return jsonify({'error': 'A download is already in progress'}), 409
+
+        # Check if model already available
+        if llm_manager.check_model_available(model_name):
+            llm_manager.config['model_name'] = model_name
+            llm_manager.save_config()
+            logger.info(f"Model {model_name} already available, switched")
+            return jsonify({'success': True, 'already_available': True})
+
+        # Start download in background
+        thread = threading.Thread(
+            target=llm_manager.pull_model_async,
+            args=(model_name,),
+            daemon=True
+        )
+        thread.start()
+        logger.info(f"Started downloading model: {model_name}")
+        return jsonify({'success': True, 'downloading': True})
+
+    except Exception as e:
+        logger.error(f"Pull model error: {e}")
+        return jsonify({'error': str(e)[:200]}), 500
+
+
+@app.route('/pull_model_status', methods=['GET'])
+def pull_model_status():
+    """Get current model download progress"""
+    return jsonify(llm_manager.model_download_progress)
+
+
 @app.route('/get_prompt', methods=['GET'])
 def get_prompt():
     return jsonify({'prompt': read_prompt()})
@@ -889,6 +1335,117 @@ def update_prompt():
     except Exception as e:
         logger.error(f"Save prompt error: {e}")
         return jsonify({'error': str(e)[:200]}), 500
+
+@app.route('/upload_template', methods=['POST'])
+@rate_limit
+def upload_template():
+    """Upload a Word document template"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        original_name = file.filename
+        if not original_name or not isinstance(original_name, str):
+            return jsonify({'error': 'Invalid filename'}), 400
+
+        if len(original_name) > 255:
+            return jsonify({'error': 'Filename too long'}), 400
+
+        if '..' in original_name or '/' in original_name or '\\' in original_name:
+            return jsonify({'error': 'Invalid filename'}), 400
+
+        if not original_name.lower().endswith('.docx'):
+            return jsonify({'error': 'Only .docx files are allowed'}), 400
+
+        # Save to a temp path first for validation
+        temp_path = os.path.join(TEMPLATE_FOLDER, f"temp_{secrets.token_hex(8)}.docx")
+        file.save(temp_path)
+
+        # Check file size (50MB limit for templates)
+        if os.path.getsize(temp_path) > 50 * 1024 * 1024:
+            safe_remove_file(temp_path)
+            return jsonify({'error': 'Template too large (max 50MB)'}), 400
+
+        # Validate it's a real .docx by opening with python-docx
+        try:
+            from docx import Document
+        except ImportError:
+            safe_remove_file(temp_path)
+            logger.error("python-docx is not installed")
+            return jsonify({'error': 'python-docx is not installed. Run: pip install python-docx'}), 500
+
+        try:
+            Document(temp_path)
+        except Exception as e:
+            safe_remove_file(temp_path)
+            logger.error(f"Invalid Word document: {e}")
+            return jsonify({'error': f'Invalid Word document: {str(e)[:100]}'}), 400
+
+        # Move to final location (overwrite any existing template)
+        if os.path.exists(TEMPLATE_FILE):
+            safe_remove_file(TEMPLATE_FILE)
+        os.rename(temp_path, TEMPLATE_FILE)
+
+        try:
+            os.chmod(TEMPLATE_FILE, 0o600)
+        except OSError:
+            pass
+
+        # Save original filename in config
+        llm_manager.config['template_filename'] = secure_filename(original_name)
+        llm_manager.save_config()
+
+        logger.info(f"Template uploaded: {original_name}")
+        return jsonify({
+            'success': True,
+            'filename': llm_manager.config['template_filename']
+        })
+
+    except Exception as e:
+        logger.error(f"Template upload error: {e}")
+        return jsonify({'error': str(e)[:200]}), 500
+
+
+@app.route('/get_template_status', methods=['GET'])
+def get_template_status():
+    """Check if a Word template is uploaded"""
+    has_template = os.path.isfile(TEMPLATE_FILE)
+    filename = llm_manager.config.get('template_filename', '') if has_template else ''
+    return jsonify({
+        'has_template': has_template,
+        'filename': filename
+    })
+
+
+@app.route('/delete_template', methods=['POST'])
+@rate_limit
+def delete_template():
+    """Remove the uploaded Word template"""
+    try:
+        if os.path.isfile(TEMPLATE_FILE):
+            safe_remove_file(TEMPLATE_FILE)
+
+        llm_manager.config.pop('template_filename', None)
+        llm_manager.save_config()
+
+        logger.info("Template deleted")
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Template delete error: {e}")
+        return jsonify({'error': str(e)[:200]}), 500
+
+
+@app.route('/get_avg_processing_time', methods=['GET'])
+def avg_processing_time():
+    """Return the average PDF processing time"""
+    avg = get_average_processing_time()
+    count = len(load_processing_times())
+    return jsonify({'avg_seconds': avg, 'count': count})
+
 
 @app.route('/save_api_key', methods=['POST'])
 @rate_limit
@@ -993,7 +1550,8 @@ def get_provider_endpoint():
         return jsonify({
             'success': True,
             'provider': llm_manager.config.get('provider', 'ollama'),
-            'api_model': llm_manager.config.get('api_model', 'gpt-4o-mini')
+            'api_model': llm_manager.config.get('api_model', 'gpt-4o-mini'),
+            'model_name': llm_manager.config.get('model_name', 'qwen2.5:14b')
         })
     except Exception as e:
         logger.error(f"Get provider error: {e}")
@@ -1127,45 +1685,73 @@ def process_pdf():
             return jsonify({'error': 'Invalid filename'}), 400
         
         filename = secure_filename(file.filename)
-        if not filename.lower().endswith('.pdf'):
-            return jsonify({'error': 'Only PDF files allowed'}), 400
-        
+        file_ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+        if file_ext not in ALLOWED_EXTENSIONS:
+            return jsonify({'error': 'Only PDF and ZIP files are allowed'}), 400
+
         unique_filename = f"{secrets.token_hex(8)}_{filename}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-        
-        logger.info(f"Processing PDF: {filename}")
+
+        logger.info(f"Processing file: {filename}")
         file.save(filepath)
-        
+
         if os.path.getsize(filepath) > app.config['MAX_CONTENT_LENGTH']:
             safe_remove_file(filepath)
             return jsonify({'error': 'File too large (max 50MB)'}), 400
-        
+
         try:
-            pdf_text = extract_pdf_text(filepath)
+            start_time = time.time()
+
+            if file_ext == 'zip':
+                document_text = extract_latex_text(filepath)
+            else:
+                document_text = extract_pdf_text(filepath)
             prompt = read_prompt()
-            llm_response = query_llm(prompt, pdf_text)
-            
-            output_filename = f"{Path(filename).stem}_output.txt"
-            output_path = os.path.join(
-                app.config['OUTPUT_FOLDER'],
-                f"{secrets.token_hex(8)}_{output_filename}"
-            )
-            
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(llm_response)
-            
+
+            # Augment prompt with template structure if a template is uploaded
+            has_template = os.path.isfile(TEMPLATE_FILE)
+            if has_template:
+                template_structure = extract_template_structure(TEMPLATE_FILE)
+                if template_structure:
+                    prompt = f"{prompt}\n\n{template_structure}"
+
+            llm_response = query_llm(prompt, document_text)
+
+            if has_template:
+                # Generate .docx output using the template
+                output_filename = f"{Path(filename).stem}_output.docx"
+                output_path = os.path.join(
+                    app.config['OUTPUT_FOLDER'],
+                    f"{secrets.token_hex(8)}_{output_filename}"
+                )
+                doc = generate_docx_from_template(TEMPLATE_FILE, llm_response)
+                doc.save(output_path)
+            else:
+                # Plain text output (no template)
+                output_filename = f"{Path(filename).stem}_output.txt"
+                output_path = os.path.join(
+                    app.config['OUTPUT_FOLDER'],
+                    f"{secrets.token_hex(8)}_{output_filename}"
+                )
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(llm_response)
+
+            duration = round(time.time() - start_time, 2)
+            save_processing_time(duration)
+
             try:
                 os.chmod(output_path, 0o600)
             except OSError:
                 pass
-            
+
             output_id = os.path.basename(output_path)
-            logger.info(f"PDF processed successfully: {output_id}")
-            
+            logger.info(f"PDF processed successfully: {output_id} ({duration}s)")
+
             return jsonify({
                 'status': 'success',
                 'output_file': output_id,
-                'original_name': output_filename
+                'original_name': output_filename,
+                'duration': duration
             })
         
         finally:
